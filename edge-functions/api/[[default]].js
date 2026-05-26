@@ -1657,6 +1657,46 @@ async function handleToggleMaterialFavorite(request, JWT_SECRET, materialId) {
 }
 
 // ============================================================
+// 路由处理器 - 用户设置
+// ============================================================
+
+const DEFAULT_SETTINGS = {
+  theme: 'system',
+  citationFormat: 'ieee',
+  language: 'zh-CN',
+  autoSave: true,
+  notifications: {
+    newPapers: true,
+    readingReminders: true,
+    projectUpdates: true,
+    pointsChange: false,
+  },
+};
+
+async function handleGetSettings(request, JWT_SECRET) {
+  const payload = await requireAuth(request, JWT_SECRET);
+  if (payload instanceof Response) return payload;
+
+  const settings = await kvGetJson('users:settings:' + payload.userId);
+  return success(settings || DEFAULT_SETTINGS, 'Success', request);
+}
+
+async function handleUpdateSettings(request, JWT_SECRET) {
+  const payload = await requireAuth(request, JWT_SECRET);
+  if (payload instanceof Response) return payload;
+
+  try {
+    const body = await request.json();
+    const current = await kvGetJson('users:settings:' + payload.userId) || { ...DEFAULT_SETTINGS };
+    const updated = { ...current, ...body, updatedAt: new Date().toISOString() };
+    await kvSetJson('users:settings:' + payload.userId, updated);
+    return success(updated, 'Settings updated', request);
+  } catch (e) {
+    return apiError('Invalid request', 400, 'BAD_REQUEST', request);
+  }
+}
+
+// ============================================================
 // 路由处理器 - 批量导入
 // ============================================================
 
@@ -1926,6 +1966,7 @@ export async function onRequest(context) {
   // ========================================
   if (segments[0] === 'auth') {
     if (segments[1] === 'login') return handleLogin(request, JWT_SECRET);
+    if (segments[1] === 'register') return handleRegister(request, JWT_SECRET);
     if (segments[1] === 'me') return handleMe(request, JWT_SECRET);
     if (segments[1] === 'logout') return handleLogout(request);
     if (segments[1] === 'change-password') return handleChangePassword(request, JWT_SECRET);
@@ -1985,33 +2026,84 @@ export async function onRequest(context) {
       return success({ isFavorited: paper.isFavorited }, 'Success', request);
     }
     if (request.method === 'POST') return handleCreatePaper(request, JWT_SECRET);
+    // GET /papers/export - 导出文献
+    if (segments.length === 2 && segments[1] === 'export' && request.method === 'GET') {
+      const payload = await requireAuth(request, JWT_SECRET);
+      if (payload instanceof Response) return payload;
+      const url = new URL(request.url);
+      const format = url.searchParams.get('format') || 'json';
+      const paperIds = await kvGetJson('users:' + payload.userId + ':papers') || [];
+      const allPapers = [];
+      for (const pid of paperIds) {
+        const p = await kvGetJson('papers:' + pid);
+        if (p) allPapers.push(p);
+      }
+      if (format === 'bibtex') {
+        const bibtex = allPapers.map(p => {
+          const key = p.id || 'ref' + Math.random().toString(36).substr(2, 6);
+          return `@article{${key},\n  title={${p.title || ''}},\n  author={${(p.authors || []).join(' and ')}},\n  year={${p.year || ''}},\n  journal={${p.venue || ''}}\n}`;
+        }).join('\n\n');
+        return new Response(bibtex, { headers: { 'Content-Type': 'text/plain; charset=utf-8', ...makeCorsHeaders(request) } });
+      }
+      if (format === 'csv') {
+        const header = 'id,title,authors,year,venue\n';
+        const rows = allPapers.map(p => [
+          p.id, p.title, (p.authors || []).join(';'), p.year, p.venue
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        return new Response(header + rows, { headers: { 'Content-Type': 'text/csv; charset=utf-8', ...makeCorsHeaders(request) } });
+      }
+      return success({ papers: allPapers, count: allPapers.length }, 'Success', request);
+    }
     if (segments.length === 2) {
       if (request.method === 'GET') return handleGetPaper(request, segments[1]);
       if (request.method === 'PUT') return handleUpdatePaper(request, JWT_SECRET, segments[1]);
       if (request.method === 'DELETE') return handleDeletePaper(request, JWT_SECRET, segments[1]);
     }
-    // Notes & Highlights (mock - return empty arrays for now)
+    // Notes & Highlights — KV 持久化
     if (segments.length === 3 && segments[2] === 'notes' && request.method === 'GET') {
-      return success([], 'Success', request);
+      const paper = await kvGetJson('papers:' + segments[1]);
+      const notes = (paper && paper.notes) ? paper.notes : [];
+      return success(notes, 'Success', request);
     }
     if (segments.length === 3 && segments[2] === 'notes' && request.method === 'POST') {
       try {
         const body = await request.json();
-        return success({ id: generateId('note'), content: body.content || '', createdAt: new Date().toISOString() }, 'Note created', request);
+        const paper = await kvGetJson('papers:' + segments[1]);
+        if (!paper) return notFound('Paper not found', request);
+        const note = { id: generateId('note'), content: body.content || '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        if (!paper.notes) paper.notes = [];
+        paper.notes.push(note);
+        await kvSetJson('papers:' + segments[1], paper);
+        return success(note, 'Note created', request);
       } catch {
         return apiError('Invalid request', 400, 'BAD_REQUEST', request);
       }
     }
     if (segments.length === 4 && segments[2] === 'notes' && request.method === 'DELETE') {
+      const paper = await kvGetJson('papers:' + segments[1]);
+      if (!paper) return notFound('Paper not found', request);
+      const noteId = segments[3];
+      if (paper.notes) {
+        paper.notes = paper.notes.filter(n => n.id !== noteId);
+      }
+      await kvSetJson('papers:' + segments[1], paper);
       return success({ deleted: true }, 'Note deleted', request);
     }
     if (segments.length === 3 && segments[2] === 'highlights' && request.method === 'GET') {
-      return success([], 'Success', request);
+      const paper = await kvGetJson('papers:' + segments[1]);
+      const highlights = (paper && paper.highlights) ? paper.highlights : [];
+      return success(highlights, 'Success', request);
     }
     if (segments.length === 3 && segments[2] === 'highlights' && request.method === 'POST') {
       try {
         const body = await request.json();
-        return success({ id: generateId('hl'), text: body.text || '', color: body.color || '#fbbf24', createdAt: new Date().toISOString() }, 'Highlight created', request);
+        const paper = await kvGetJson('papers:' + segments[1]);
+        if (!paper) return notFound('Paper not found', request);
+        const hl = { id: generateId('hl'), text: body.text || '', color: body.color || '#fbbf24', note: body.note || '', page: body.page || '', createdAt: new Date().toISOString() };
+        if (!paper.highlights) paper.highlights = [];
+        paper.highlights.push(hl);
+        await kvSetJson('papers:' + segments[1], paper);
+        return success(hl, 'Highlight created', request);
       } catch {
         return apiError('Invalid request', 400, 'BAD_REQUEST', request);
       }
@@ -2204,6 +2296,26 @@ export async function onRequest(context) {
     if (segments.length === 3 && segments[2] === 'papers' && request.method === 'POST') {
       return handleAddPaperToLibrary(request, JWT_SECRET, segments[1]);
     }
+    if (segments.length === 4 && segments[2] === 'papers' && request.method === 'DELETE') {
+      const libId = segments[1];
+      const paperId = segments[3];
+      const payload = await requireAuth(request, JWT_SECRET);
+      if (payload instanceof Response) return payload;
+      const lib = await kvGetJson('libraries:' + libId);
+      if (!lib) return notFound('Library not found', request);
+      if (lib.userId !== payload.userId && payload.role !== 'admin') return forbidden(request);
+      const papers = lib.papers || [];
+      const idx = papers.indexOf(paperId);
+      if (idx > -1) {
+        papers.splice(idx, 1);
+        lib.papers = papers;
+        lib.paperCount = papers.length;
+        lib.updatedAt = new Date().toISOString();
+        await kvSetJson('libraries:' + libId, lib);
+      }
+      const response = { ...lib, color: lib.color || '#3d5a80', icon: lib.icon || 'Library', paperIds: lib.papers || [], isDefault: lib.isDefault || false };
+      return success(response, 'Paper removed from library', request);
+    }
     if (segments.length === 2) {
       if (request.method === 'GET') return handleGetLibrary(request, segments[1]);
       if (request.method === 'PUT') return handleUpdateLibrary(request, JWT_SECRET, segments[1]);
@@ -2239,6 +2351,14 @@ export async function onRequest(context) {
   // ========================================
   if (segments[0] === 'reading-records' && request.method === 'POST') {
     return success(null, 'Success', request);
+  }
+
+  // ========================================
+  // 用户设置路由
+  // ========================================
+  if (segments[0] === 'settings') {
+    if (request.method === 'GET') return handleGetSettings(request, JWT_SECRET);
+    if (request.method === 'PUT') return handleUpdateSettings(request, JWT_SECRET);
   }
 
   // ========================================

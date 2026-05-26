@@ -6,7 +6,9 @@
 import type { ApiResponse } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
-const IS_MOCK: boolean = import.meta.env.VITE_MOCK_MODE === 'true';
+// 与 src/lib/api.ts 保持一致：默认 Mock 模式（未设置 VITE_MOCK_MODE 时）
+// 生产部署时设置 VITE_MOCK_MODE=false 启用真实 API
+const IS_MOCK: boolean = import.meta.env.VITE_MOCK_MODE !== 'false';
 
 // ============================================================
 // 工具函数
