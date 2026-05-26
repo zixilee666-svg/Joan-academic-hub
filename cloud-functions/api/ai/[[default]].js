@@ -215,13 +215,33 @@ Return compact valid JSON only, no markdown.`;
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || '';
 
+    console.log('[CF-ParsePaper] AI raw content length:', content.length);
+    console.log('[CF-ParsePaper] AI raw content preview:', content.slice(0, 500));
+
     let parsed;
     try {
-      // 尝试提取 JSON（AI 可能用 ```json 包裹）
-      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/(\{[\s\S]*\})/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[1] : content);
-    } catch {
-      parsed = { raw: content };
+      // 尝试提取 JSON（AI 可能用 ```json 包裹，也可能直接返回 JSON）
+      let jsonStr = content.trim();
+
+      // 移除 markdown 代码块标记
+      const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1].trim();
+      }
+
+      // 尝试找到最外层的大括号结构
+      const firstBrace = jsonStr.indexOf('{');
+      const lastBrace = jsonStr.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+      }
+
+      parsed = JSON.parse(jsonStr);
+      console.log('[CF-ParsePaper] JSON parsed successfully, keys:', Object.keys(parsed).join(', '));
+    } catch (parseErr) {
+      console.error('[CF-ParsePaper] JSON parse failed:', parseErr.message);
+      console.error('[CF-ParsePaper] Raw content:', content.slice(0, 1000));
+      parsed = {};
     }
 
     // 字段映射与默认值（兼容 AI 可能返回的 journal/number 等旧字段名）
@@ -240,6 +260,19 @@ Return compact valid JSON only, no markdown.`;
       keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
       references: Array.isArray(parsed.references) ? parsed.references : [],
     };
+
+    console.log('[CF-ParsePaper] Extracted result:', JSON.stringify(result).slice(0, 300));
+
+    // 检查是否成功提取到有效内容
+    const hasMeaningfulData = result.title || result.authors.length > 0 || result.abstract;
+    if (!hasMeaningfulData) {
+      console.error('[CF-ParsePaper] No meaningful data extracted from AI response');
+      return jsonResponse({
+        success: false,
+        error: 'AI 未能从文本中提取到有效的文献信息，请检查文本内容或稍后重试',
+        debug: { rawContent: content.slice(0, 1000) },
+      }, 422);
+    }
 
     // 服务端生成引用格式
     const bibtex = generateBibTeX(result);

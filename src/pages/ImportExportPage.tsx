@@ -206,7 +206,10 @@ export default function ImportExportPage() {
         setDialogOpen(true);
         return result;
       }
-      toast.error('AI 解析失败，请重试');
+      // 后端返回 success=false 的情况
+      const errorMsg = (res as any).error || 'AI 解析失败，请重试';
+      console.error('[AI Parse] Server error:', errorMsg, (res as any).debug);
+      toast.error(errorMsg);
       return null;
     } catch (err: any) {
       console.error('[AI Parse] Error:', err);
