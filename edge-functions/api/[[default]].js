@@ -107,7 +107,9 @@ async function kvListRemove(listKey, item) {
 // Supports: Kimi, DeepSeek, Doubao, Claude(OpenAI-compat), OpenAI, Custom
 // ============================================================
 async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { stream = false, temperature = 0.3, maxTokens = 4096 } = {}) {
-  const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
+  // 移除 baseUrl 末尾可能已有的 /chat/completions，避免重复拼接
+  const base = baseUrl.replace(/\/chat\/completions\/?$/, '').replace(/\/$/, '');
+  const url = base + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
     headers: {
