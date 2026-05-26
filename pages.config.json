@@ -12,7 +12,7 @@
   "edgeFunctions": {
     "routes": [
       {
-        "src": "/api/(.*)",
+        "src": "/api/(?!ai/(chat|parse-paper))(.*)",
         "dest": "/api/[[default]].js"
       }
     ]
