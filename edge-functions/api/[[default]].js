@@ -3125,53 +3125,60 @@ export async function onRequest(context) {
   if (segments[0] === 'ai') {
     // —— 对话 CRUD（需认证）——
     if (segments[1] === 'conversations') {
-      const authPayload = await authenticate(request, JWT_SECRET);
-      if (!authPayload) return unauthorized(request);
-      const userId = authPayload.userId || authPayload.sub || 'anonymous';
+      try {
+        const authPayload = await authenticate(request, JWT_SECRET);
+        if (!authPayload) return unauthorized(request);
+        const userId = authPayload.userId || authPayload.sub || 'anonymous';
 
-      // GET /api/ai/conversations — 获取所有对话（返回完整数据，含 messages）
-      if (request.method === 'GET' && !segments[2]) {
-        const index = await getConvIndex(userId);
-        // 按 updatedAt 降序排列
-        index.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-        // 为每个对话加载完整数据
-        const conversations = [];
-        for (const entry of index) {
-          const conv = await getConversation(userId, entry.id);
-          if (conv) conversations.push(conv);
+        // GET /api/ai/conversations — 获取所有对话（返回完整数据，含 messages）
+        if (request.method === 'GET' && !segments[2]) {
+          const index = await getConvIndex(userId);
+          // 按 updatedAt 降序排列
+          if (Array.isArray(index)) {
+            index.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+          }
+          // 为每个对话加载完整数据
+          const conversations = [];
+          for (const entry of (Array.isArray(index) ? index : [])) {
+            const conv = await getConversation(userId, entry.id);
+            if (conv) conversations.push(conv);
+          }
+          return success(conversations, 'Success', request);
         }
-        return success(conversations, 'Success', request);
-      }
 
-      // GET /api/ai/conversations/:id — 获取单个对话
-      if (request.method === 'GET' && segments[2]) {
-        const conv = await getConversation(userId, segments[2]);
-        if (!conv) return success(null, 'Conversation not found', request);
-        return success(conv, 'Success', request);
-      }
-
-      // PUT /api/ai/conversations/:id — 保存/更新对话
-      if (request.method === 'PUT' && segments[2]) {
-        try {
-          const body = await request.json();
-          const convData = {
-            ...body,
-            userId,
-            id: segments[2],
-            updatedAt: new Date().toISOString(),
-          };
-          await saveConversation(userId, segments[2], convData);
-          return success(convData, 'Conversation saved', request);
-        } catch (e) {
-          return apiError('Invalid request body', 400, 'INVALID_BODY', request);
+        // GET /api/ai/conversations/:id — 获取单个对话
+        if (request.method === 'GET' && segments[2]) {
+          const conv = await getConversation(userId, segments[2]);
+          if (!conv) return success(null, 'Conversation not found', request);
+          return success(conv, 'Success', request);
         }
-      }
 
-      // DELETE /api/ai/conversations/:id — 删除对话
-      if (request.method === 'DELETE' && segments[2]) {
-        await kvDel(AI_CONV_PREFIX + userId + ':' + segments[2]);
-        await removeFromConvIndex(userId, segments[2]);
-        return success(null, 'Conversation deleted', request);
+        // PUT /api/ai/conversations/:id — 保存/更新对话
+        if (request.method === 'PUT' && segments[2]) {
+          try {
+            const body = await request.json();
+            const convData = {
+              ...body,
+              userId,
+              id: segments[2],
+              updatedAt: new Date().toISOString(),
+            };
+            await saveConversation(userId, segments[2], convData);
+            return success(convData, 'Conversation saved', request);
+          } catch (e) {
+            return apiError('Invalid request body', 400, 'INVALID_BODY', request);
+          }
+        }
+
+        // DELETE /api/ai/conversations/:id — 删除对话
+        if (request.method === 'DELETE' && segments[2]) {
+          await kvDel(AI_CONV_PREFIX + userId + ':' + segments[2]);
+          await removeFromConvIndex(userId, segments[2]);
+          return success(null, 'Conversation deleted', request);
+        }
+      } catch (e) {
+        console.error('[AI Conversations] Unhandled error:', e.message || e);
+        return apiError('AI conversations error: ' + (e.message || 'unknown'), 500, 'AI_CONV_ERROR', request);
       }
     }
 

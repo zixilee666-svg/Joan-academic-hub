@@ -18,7 +18,17 @@
 - **AuthContext**: Rewritten to use Zustand store (no direct localStorage)
 - **E2E**: 42 tests, `workers: 1` (multi-worker localStorage race condition)
 - **EdgeOne Deploy**: Deploy `./dist` only, NOT project root (avoids Edge Functions build failure)
-- **GitHub**: https://github.com/zixilee666-svg/project02.git (branch: main)
+- **GitHub**: https://github.com/zixilee666-svg/Joan-academic-hub.git (branch: main)
+
+## Real Backend Mode (2026-05-26)
+- **VITE_MOCK_MODE**: `false` (production, real KV backend)
+- **VITE_API_URL**: `/api`
+- **EdgeOne Project**: academic-hub-v6 (ID: pages-gzlkssgpq3iu)
+- **Deploy URL**: https://academic-hub-v6-3sutpo9l.edgeone.cool
+- **IS_MOCK Logic**: `import.meta.env.VITE_MOCK_MODE !== 'false'` (both api.ts files)
+- **pages.config.json**: catch-all route dest to `[[default]].js`
+- **Edge Function**: Full real backend with KV persistence (register, login, papers CRUD, settings, libraries, projects, materials, export, import)
+- **Note**: Preview link has eo_token protection; POST API testing requires disabling protection or custom domain
 
 ## Migration Status (2026-04-29)
 - ✅ DashboardPage → api.getPapers/getProjects/getReadingStats
@@ -39,9 +49,9 @@
 - ✅ TypeScript: zero errors
 - ✅ Vite build: ~1.4s, zero warnings
 - ✅ E2E: 42/42 tests passing
-- ✅ Deployed to EdgeOne Pages (pages-sxrzjbiboekx)
-- ✅ GitHub: main branch pushed (3 commits)
-- ✅ Deploy URL: https://academic-hub-v4-dcdlrsek.edgeone.cool
+- ✅ Deployed to EdgeOne Pages (pages-gzlkssgpq3iu)
+- ✅ GitHub: main branch pushed
+- ✅ Deploy URL: https://academic-hub-v6-3sutpo9l.edgeone.cool
 
 ## TypeScript Fixes (2026-05-05)
 - **api.ts**: Added `ApiResponse<T>` union type for proper success/error handling
