@@ -109,33 +109,57 @@ const AI_CONV_INDEX_PREFIX = 'ai_conv_index:';
 const AI_CONV_PREFIX = 'ai_conv:';
 
 async function getConvIndex(userId) {
-  return kvGetJson(AI_CONV_INDEX_PREFIX + userId) || [];
+  const result = await kvGetJson(AI_CONV_INDEX_PREFIX + userId);
+  return Array.isArray(result) ? result : [];
 }
 
 async function updateConvIndex(userId, convId, title, updatedAt) {
-  const index = await getConvIndex(userId);
-  const existing = index.find(c => c.id === convId);
-  if (existing) {
-    existing.title = title;
-    existing.updatedAt = updatedAt;
-  } else {
-    index.unshift({ id: convId, title, updatedAt });
+  try {
+    const index = await getConvIndex(userId);
+    if (!Array.isArray(index)) {
+      console.error('[ConvIndex] Invalid index type, skipping update');
+      return;
+    }
+    const existing = index.find(c => c.id === convId);
+    if (existing) {
+      existing.title = title;
+      existing.updatedAt = updatedAt;
+    } else {
+      index.unshift({ id: convId, title, updatedAt });
+    }
+    await kvSetJson(AI_CONV_INDEX_PREFIX + userId, index);
+  } catch (e) {
+    console.error('[ConvIndex] updateConvIndex error:', e.message);
   }
-  await kvSetJson(AI_CONV_INDEX_PREFIX + userId, index);
 }
 
 async function removeFromConvIndex(userId, convId) {
-  const index = await getConvIndex(userId);
-  await kvSetJson(AI_CONV_INDEX_PREFIX + userId, index.filter(c => c.id !== convId));
+  try {
+    const index = await getConvIndex(userId);
+    if (!Array.isArray(index)) return;
+    await kvSetJson(AI_CONV_INDEX_PREFIX + userId, index.filter(c => c.id !== convId));
+  } catch (e) {
+    console.error('[ConvIndex] removeFromConvIndex error:', e.message);
+  }
 }
 
 async function getConversation(userId, convId) {
-  return kvGetJson(AI_CONV_PREFIX + userId + ':' + convId);
+  try {
+    return await kvGetJson(AI_CONV_PREFIX + userId + ':' + convId);
+  } catch (e) {
+    console.error('[Conv] getConversation error:', e.message);
+    return null;
+  }
 }
 
 async function saveConversation(userId, convId, convData) {
-  await kvSetJson(AI_CONV_PREFIX + userId + ':' + convId, convData);
-  await updateConvIndex(userId, convId, convData.title || '未命名对话', convData.updatedAt || new Date().toISOString());
+  try {
+    await kvSetJson(AI_CONV_PREFIX + userId + ':' + convId, convData);
+    await updateConvIndex(userId, convId, convData.title || '未命名对话', convData.updatedAt || new Date().toISOString());
+  } catch (e) {
+    console.error('[Conv] saveConversation error:', e.message);
+    // 不向上抛出 - 对话保存失败不应导致 API 500
+  }
 }
 
 // ============================================================
@@ -308,7 +332,7 @@ GB/T 7714格式示例：
 }
 
 // AI Chat with any OpenAI-compatible API, supports SSE streaming
-async function handleAiChat(request) {
+async function handleAiChat(request, JWT_SECRET) {
   try {
     const body = await request.json();
     const { message, modelConfig, conversationId } = body;
@@ -322,16 +346,21 @@ async function handleAiChat(request) {
 
     // 构建消息列表（含历史上下文）
     const messages = [{ role: 'system', content: systemPrompt }];
-    if (conversationId) {
-      const authPayload = await authenticate(request, JWT_SECRET);
-      if (authPayload) {
-        const userId = authPayload.userId || authPayload.sub || 'anonymous';
-        const conv = await getConversation(userId, conversationId);
-        if (conv && conv.messages && conv.messages.length > 0) {
-          // 包含最近 20 条消息作为上下文
-          const recentMessages = conv.messages.slice(-20);
-          messages.push(...recentMessages.map(m => ({ role: m.role, content: m.content })));
+    if (conversationId && JWT_SECRET) {
+      try {
+        const authPayload = await authenticate(request, JWT_SECRET);
+        if (authPayload) {
+          const userId = authPayload.userId || authPayload.sub || 'anonymous';
+          const conv = await getConversation(userId, conversationId);
+          if (conv && conv.messages && conv.messages.length > 0) {
+            // 包含最近 20 条消息作为上下文
+            const recentMessages = conv.messages.slice(-20);
+            messages.push(...recentMessages.map(m => ({ role: m.role, content: m.content })));
+          }
         }
+      } catch (authErr) {
+        // 获取对话历史失败不影响本次对话
+        console.error('[AIChat] Failed to load conversation history:', authErr.message);
       }
     }
     messages.push({ role: 'user', content: message });
@@ -585,7 +614,27 @@ async function handleLogin(request, JWT_SECRET) {
 
     // 管理员特殊处理
     if (username === 'admin') {
-      const admin = await kvGetJson('users:admin');
+      let admin = await kvGetJson('users:admin');
+
+      // KV 未绑定时回退到硬编码的 admin 账户 (admin / 123456)
+      if (!admin) {
+        const kvAvailable = ACADEMIC_HUB_KV !== null;
+        if (!kvAvailable) {
+          console.warn('[Login] KV Storage not bound, using fallback admin account');
+          admin = {
+            id: 'admin',
+            username: 'admin',
+            displayName: 'Administrator',
+            email: 'admin@academic-hub.local',
+            role: 'admin',
+            institution: 'Joan Academic Hub',
+            // SHA-256("123456" + "academic-hub-salt-2026")
+            passwordHash: '72e59e5df8ee67c69469066877075f4c5a31d8cdab164b9e90287dc8c0a28ea0',
+            createdAt: new Date().toISOString(),
+          };
+        }
+      }
+
       if (admin && await verifyPassword(password, admin.passwordHash)) {
         const token = await createToken({ userId: admin.id, username: admin.username, role: admin.role }, JWT_SECRET);
         const { passwordHash, ...safeUser } = admin;
@@ -3222,7 +3271,7 @@ export async function onRequest(context) {
     }
 
     if (segments[1] === 'chat' && request.method === 'POST') {
-      return handleAiChat(request);
+      return handleAiChat(request, JWT_SECRET);
     }
     if (segments[1] === 'parse-paper' && request.method === 'POST') {
       return handleParsePaper(request);
