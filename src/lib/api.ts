@@ -1532,7 +1532,7 @@ class ApiClient {
       };
     }>('/ai/parse-paper', {
       method: 'POST',
-      timeout: 25000,
+      timeout: 60000,
       body: JSON.stringify({ text, modelConfig }),
     });
   }

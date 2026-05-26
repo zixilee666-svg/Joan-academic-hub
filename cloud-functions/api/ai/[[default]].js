@@ -183,23 +183,25 @@ async function handleParsePaper(request) {
     const apiKey = modelConfig?.apiKey || '';
     const model = modelConfig?.model || 'deepseek-chat';
 
-    const systemPrompt = `You are an academic paper metadata extractor. Extract metadata from the provided text and return a JSON object with these exact fields:
-- title: string (paper title)
-- authors: string[] (list of author names)
-- year: number (publication year)
-- month: number or null (publication month, 1-12)
-- venue: string (journal or conference name)
-- volume: string (volume number)
-- issue: string (issue number)
-- pages: string (page range, e.g., "123-145")
-- doi: string (DOI identifier)
-- url: string (paper URL)
-- abstract: string (paper abstract)
-- keywords: string[] (list of keywords)
-- references: array of {title: string, authors: string[], year: number, venue: string} (related papers cited)
-Return ONLY valid JSON, no markdown formatting.`;
+    const systemPrompt = `Extract academic paper metadata from the provided text. Return ONLY a JSON object with these fields:
+- title: paper title
+- authors: array of author names
+- year: publication year as number
+- month: publication month (1-12) or null
+- venue: journal or conference name
+- volume: volume number or empty string
+- issue: issue number or empty string
+- pages: page range or empty string
+- doi: DOI or empty string
+- url: paper URL or empty string
+- abstract: paper abstract or empty string
+- keywords: array of keywords
+- references: array of {title, authors, year, venue}
+Return compact valid JSON only, no markdown.`;
 
-    const userPrompt = `Extract metadata from this paper text (first 8000 chars):\n\n${text.slice(0, 8000)}`;
+    // 限制文本长度以加速处理（前 4000 字符通常已包含关键元数据）
+    const truncatedText = text.slice(0, 4000);
+    const userPrompt = `Extract metadata from this academic paper text:\n\n${truncatedText}`;
 
     const res = await callOpenAICompatibleApi(
       baseUrl, apiKey, model,
@@ -207,7 +209,7 @@ Return ONLY valid JSON, no markdown formatting.`;
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { stream: false, temperature: 0.1, maxTokens: 2048, timeout: 20000 }
+      { stream: false, temperature: 0.1, maxTokens: 1024, timeout: 55000 }
     );
 
     const data = await res.json();
