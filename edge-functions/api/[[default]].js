@@ -3156,7 +3156,20 @@ export async function onRequest(context) {
         // PUT /api/ai/conversations/:id — 保存/更新对话
         if (request.method === 'PUT' && segments[2]) {
           try {
-            const body = await request.json();
+            // 先读取 raw text 以便排查问题
+            const rawText = await request.text();
+            console.error('[AI PUT] Body length:', rawText ? rawText.length : 0, 'Bytes');
+            if (!rawText || rawText.trim().length === 0) {
+              return apiError('Empty request body', 400, 'EMPTY_BODY', request);
+            }
+            let body;
+            try {
+              body = JSON.parse(rawText);
+            } catch (parseErr) {
+              console.error('[AI PUT] JSON parse error:', parseErr.message);
+              console.error('[AI PUT] Raw body (first 500 chars):', rawText.slice(0, 500));
+              return apiError('Invalid JSON: ' + parseErr.message, 400, 'INVALID_JSON', request);
+            }
             const convData = {
               ...body,
               userId,
@@ -3166,6 +3179,7 @@ export async function onRequest(context) {
             await saveConversation(userId, segments[2], convData);
             return success(convData, 'Conversation saved', request);
           } catch (e) {
+            console.error('[AI PUT] Unhandled error:', e.message || e);
             return apiError('Invalid request body', 400, 'INVALID_BODY', request);
           }
         }
