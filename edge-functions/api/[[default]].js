@@ -171,14 +171,11 @@ async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { strea
   const base = baseUrl.replace(/\/chat\/completions\/?$/, '').replace(/\/$/, '');
   const url = base + '/chat/completions';
   const logUrl = url.replace(/\/\/.*@/, '//***@').replace(/(\/\/[^/]+)\/.*/, '$1/***');
-  console.error('[callOpenAICompatibleApi] PUT', logUrl, 'model:', model, 'stream:', stream, 'timeout:', timeout);
-
-  // AbortController 超时保护（Edge Function 约 30s 硬限制，留 2s 余量）
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  console.error('[callOpenAICompatibleApi] POST', logUrl, 'model:', model, 'stream:', stream, 'timeout:', timeout);
 
   try {
-    const res = await fetch(url, {
+    // 使用 Promise.race 替代 AbortController（EdgeOne 运行时 AbortController.signal 可能不兼容）
+    const fetchPromise = fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -191,8 +188,13 @@ async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { strea
         temperature,
         max_tokens: maxTokens,
       }),
-      signal: controller.signal,
     });
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`AI API timeout: request exceeded ${timeout}ms (model=${model})`)), timeout)
+    );
+
+    const res = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => 'Unknown error');
@@ -201,12 +203,8 @@ async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { strea
 
     return res;
   } catch (e) {
-    if (e.name === 'AbortError') {
-      throw new Error(`AI API timeout: request exceeded ${timeout}ms (model=${model}, stream=${stream})`);
-    }
+    console.error('[callOpenAICompatibleApi] Error:', e.name, e.message);
     throw e;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -237,7 +235,7 @@ async function handleParsePaper(request) {
     const res = await callOpenAICompatibleApi(baseUrl, apiKey, model || 'moonshot-v1-32k', [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: text.slice(0, 6000) },
-    ], { stream: false, temperature: 0.1, maxTokens: 1024, timeout: 18000 });
+    ], { stream: false, temperature: 0.1, maxTokens: 1024, timeout: 25000 });
 
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || '';
