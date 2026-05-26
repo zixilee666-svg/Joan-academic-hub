@@ -166,31 +166,46 @@ async function saveConversation(userId, convId, convData) {
 // Generic OpenAI-compatible AI API
 // Supports: Kimi, DeepSeek, Doubao, Claude(OpenAI-compat), OpenAI, Custom
 // ============================================================
-async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { stream = false, temperature = 0.3, maxTokens = 4096 } = {}) {
+async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { stream = false, temperature = 0.3, maxTokens = 4096, timeout = 28000 } = {}) {
   // 移除 baseUrl 末尾可能已有的 /chat/completions，避免重复拼接
   const base = baseUrl.replace(/\/chat\/completions\/?$/, '').replace(/\/$/, '');
   const url = base + '/chat/completions';
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream,
-      temperature,
-      max_tokens: maxTokens,
-    }),
-  });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`AI API error ${res.status}: ${errText}`);
+  // AbortController 超时保护（Edge Function 约 30s 硬限制，留 2s 余量）
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream,
+        temperature,
+        max_tokens: maxTokens,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`AI API error ${res.status}: ${errText}`);
+    }
+
+    return res;
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error(`AI API timeout: request exceeded ${timeout}ms (model=${model}, stream=${stream})`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return res;
 }
 
 // Parse paper metadata using any OpenAI-compatible API
@@ -204,65 +219,32 @@ async function handleParsePaper(request) {
       return apiError('text, apiKey and baseUrl are required', 400, 'VALIDATION_ERROR', request);
     }
 
-    const systemPrompt = `你是学术文献元数据提取专家。请从用户提供的文献文本中精确提取以下结构化信息，并以纯 JSON 格式返回（不要包含 markdown 代码块标记，只返回 JSON 本身）。
+    const systemPrompt = `你是学术文献元数据提取专家。从文献文本中提取结构化信息，只返回纯JSON（不要markdown代码块）。
 
-【提取字段说明】
-- title: 文献标题（字符串，保留原标题的大小写和特殊符号）
-- authors: 作者列表（字符串数组，每个元素格式统一为"FirstName LastName"，如"John Smith"；中文作者保留原名）
-- year: 发表年份（4位数字，如2024）
-- month: 发表月份（1-12的数字，如无法提取则返回null）
-- venue: 发表期刊或会议全称（字符串，如"IEEE Transactions on Pattern Analysis and Machine Intelligence"或"Proceedings of NeurIPS"）
-- volume: 卷号（字符串或数字，如无法提取则返回空字符串）
-- issue: 期号（字符串或数字，如无法提取则返回空字符串）
-- pages: 页码范围（字符串，如"123-145"或"pp. 123-145"，如无法提取则返回空字符串）
-- doi: DOI（字符串，格式为"10.xxxx/xxxx"，如无法提取则返回空字符串）
-- url: 文献URL链接（字符串，如无法提取则返回空字符串）
-- abstract: 摘要（字符串，完整提取，如无法提取则返回空字符串）
-- keywords: 关键词列表（字符串数组，3-10个，从文本中提取或根据内容推断）
-- bibtex: BibTeX 引用格式（字符串，格式如下所示，必须包含所有可用字段）
-- ieee: IEEE 引用格式（字符串）
-- gb7714: GB/T 7714-2015 引用格式（字符串，中文文献使用中文格式，英文使用英文格式）
-- references: 参考文献列表（对象数组，每个对象包含 title, authors, year, venue；如文本中无参考文献则返回空数组）
+字段及类型：
+- title: string（保留原标题大小写）
+- authors: string[]（FirstName LastName，中文保留原名）
+- year: number（4位数字）
+- month: number|null（1-12）
+- venue: string（期刊/会议全称）
+- volume: string、issue: string、pages: string、doi: string、url: string、abstract: string
+- keywords: string[]（3-10个）
+- bibtex: string（@article格式）、ieee: string、gb7714: string
+- references: {title, authors, year, venue}[]（无则为空数组）
 
-【各字段提取指南】
-1. DOI识别：在文本中搜索以"10."开头的字符串，通常格式为"10.xxxx/xxxx"，可能前面带有"DOI:","doi:","https://doi.org/"等前缀
-2. 年份识别：搜索4位数字，优先选择发表年份（通常在标题附近或页脚），排除下载日期、审稿日期等
-3. 月份识别：查找月份名称（January-December）或数字1-12，通常紧跟在年份附近
-4. 页码识别：查找"pp.","pages","Page"等关键词后的数字范围，如"pp. 123-145"或"123-145"
-5. 卷号/期号识别：查找"Vol.","Volume","No.","Issue"等关键词后的数字，或"XX(Y)"格式
-6. 作者识别：查找"Author(s)","By","作者"等关键词后的姓名列表，注意区分通讯作者和共同作者
-7. URL识别：查找"http://"或"https://"开头的链接
-8. 期刊/会议名：查找出版社信息附近的全称，优先使用官方全称而非缩写
+提取规则：
+1. DOI: 搜索"10."开头字符串，排除"DOI:"前缀
+2. 年份: 4位数字，优先标题附近，排除下载/审稿日期
+3. 作者: 搜索"Author(s)","By"后的姓名列表
+4. 期刊: 使用官方全称，非缩写
+5. 无法提取用""、[]或null，禁止编造
 
-【引用格式生成规则】
-BibTeX格式示例：
-@article{key,
-  title={...},
-  author={... and ...},
-  journal={...},
-  year={...},
-  volume={...},
-  number={...},
-  pages={...},
-  doi={...}
-}
-
-IEEE格式示例：
-F. Author et al., "Title," Journal, vol. X, no. Y, pp. Z, Month Year.
-
-GB/T 7714格式示例：
-[1] 作者. 标题[J]. 期刊名, 年, 卷(期): 页码. DOI:...
-
-【重要约束】
-1. 如果某项信息无法从文本中提取，使用空字符串、空数组或null（按字段说明）
-2. 引用格式必须基于真实提取的信息生成，禁止编造不存在的字段
-3. 只返回 JSON，不要有任何解释性文字、markdown代码块标记或额外注释
-4. 确保 JSON 格式合法，所有字符串值正确转义`;
+只返回JSON，无额外文字。`;
 
     const res = await callOpenAICompatibleApi(baseUrl, apiKey, model || 'moonshot-v1-32k', [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `请精确解析以下文献文本，提取所有可用的元数据信息：\n\n${text.slice(0, 30000)}` },
-    ], { stream: false, temperature: 0.1, maxTokens: 8192 });
+      { role: 'user', content: `解析以下文献文本：\n\n${text.slice(0, 15000)}` },
+    ], { stream: false, temperature: 0.1, maxTokens: 4096, timeout: 25000 });
 
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || '';
