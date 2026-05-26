@@ -255,7 +255,7 @@ Return ONLY valid JSON, no markdown formatting.`;
 }
 
 // ============================================================
-// handleAiChat (JSON response - non-streaming)
+// handleAiChat (SSE streaming - direct pass-through)
 // ============================================================
 
 async function handleAiChat(request) {
@@ -288,19 +288,23 @@ async function handleAiChat(request) {
 
     console.log('[CF-AiChat] messages count:', messages.length);
 
+    // 流式调用 AI API，直接透传 SSE 流到前端
     const res = await callOpenAICompatibleApi(
       baseUrl, apiKey, model, messages,
-      { stream: false, temperature: 0.7, maxTokens: 4096, timeout: 20000 }
+      { stream: true, temperature: 0.7, maxTokens: 2048, timeout: 25000 }
     );
 
     console.log('[CF-AiChat] AI API response status:', res.status);
 
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || '';
-
-    return jsonResponse({
-      success: true,
-      data: { reply: content, conversationId },
+    // 直接透传 SSE 响应体，无需等待完整内容
+    return new Response(res.body, {
+      status: res.status,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
     });
   } catch (e) {
     console.error('[CF-AiChat] Error:', e.name, e.message, e.stack);

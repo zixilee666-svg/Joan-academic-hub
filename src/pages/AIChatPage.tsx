@@ -222,11 +222,16 @@ export default function AIChatPage() {
             const lines = chunk.split('\n');
             for (const line of lines) {
               if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6).trim();
+                if (jsonStr === '[DONE]') break;
                 try {
-                  const data = JSON.parse(line.slice(6));
-                  if (data.done) break;
-                  if (data.content) {
-                    aiContent += data.content;
+                  const data = JSON.parse(jsonStr);
+                  // 兼容两种 SSE 格式：
+                  // 1. {content: "..."} (旧格式 / 自定义格式)
+                  // 2. {choices: [{delta: {content: "..."}}]} (OpenAI / DeepSeek 格式)
+                  const content = data.content || data.choices?.[0]?.delta?.content;
+                  if (content) {
+                    aiContent += content;
                     setMessages(prev =>
                       prev.map(m => m.id === aiMsgId ? { ...m, content: aiContent } : m)
                     );
