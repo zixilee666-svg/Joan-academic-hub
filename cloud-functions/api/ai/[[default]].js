@@ -19,7 +19,8 @@
 // 如果无法访问 KV，对话功能将降级（chat 仍可工作）
 
 // JWT 密钥（从环境变量读取，fallback 到硬编码值）
-const JWT_SECRET_RAW = process.env.JWT_SECRET || 'joan-academic-hub-secret-key-2026';
+// 注意：必须与 Edge Function 中的默认值完全一致
+const JWT_SECRET_RAW = process.env.JWT_SECRET || 'academic-hub-v4-jwt-secret-key-2026-prod';
 
 // ============================================================
 // JWT 验证（兼容 Edge Function 的实现）
