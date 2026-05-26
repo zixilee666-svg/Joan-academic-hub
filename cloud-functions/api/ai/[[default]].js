@@ -239,30 +239,18 @@ async function handleAiChat(request) {
     const apiKey = modelConfig?.apiKey || '';
     const model = modelConfig?.model || 'deepseek-chat';
 
+    console.log('[CF-AiChat] model:', model, 'baseUrl:', baseUrl.replace(/https?:\/\/[^/]+/, '***'), 'conversationId:', conversationId);
+
     const res = await callOpenAICompatibleApi(
       baseUrl, apiKey, model, messages,
       { stream: true, temperature: 0.7, maxTokens: 4096, timeout: 55000 }
     );
 
-    // SSE 流式转发
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
+    console.log('[CF-AiChat] AI API response status:', res.status);
 
-    const reader = res.body.getReader();
-    (async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await writer.write(value);
-        }
-      } finally {
-        await writer.close();
-      }
-    })();
-
-    return new Response(readable, {
+    // 直接传递 res.body，无需 TransformStream（Cloud Function Node.js 环境可能不支持）
+    return new Response(res.body, {
+      status: res.status,
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -271,8 +259,8 @@ async function handleAiChat(request) {
       },
     });
   } catch (e) {
-    console.error('[CF-AiChat] Error:', e.name, e.message);
-    return jsonResponse({ success: false, error: e.message }, 502);
+    console.error('[CF-AiChat] Error:', e.name, e.message, e.stack);
+    return jsonResponse({ success: false, error: e.message, debug: { name: e.name, stack: e.stack?.slice(0, 500) } }, 502);
   }
 }
 
