@@ -556,6 +556,22 @@ function handleMockRequest(path: string, method: string, body?: any): any {
     return { success: true };
   }
 
+  // Change password (Mock)
+  if (path === '/auth/change-password' && method === 'POST') {
+    const { currentPassword, newPassword } = body || {};
+    if (!currentPassword || !newPassword) {
+      throw new ApiError(ApiErrorCode.VALIDATION_ERROR, '请填写当前密码和新密码');
+    }
+    if (newPassword.length < 6) {
+      throw new ApiError(ApiErrorCode.VALIDATION_ERROR, '新密码至少 6 个字符');
+    }
+    // In mock mode, validate against known passwords
+    if (currentPassword !== '123456' && currentPassword !== '11223344') {
+      throw new ApiError('INVALID_PASSWORD', '当前密码错误');
+    }
+    return { success: true, message: 'Password changed successfully' };
+  }
+
   // Papers — list GET (only /papers or /papers?query, NOT /papers/:id)
   if (/^\/papers(\?|$)/.test(path) && !path.includes('/notes') && !path.includes('/highlights') && !path.includes('/favorite') && !path.includes('/batch-import') && !path.includes('/export') && method === 'GET') {
     const paramStr = path.includes('?') ? path.split('?')[1] : '';
@@ -1162,6 +1178,13 @@ class ApiClient {
 
   async logout() {
     return this.request('/auth/logout', { method: 'POST' });
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    return this.request<ApiResponse<null>>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
   }
 
   // ---- Papers ----

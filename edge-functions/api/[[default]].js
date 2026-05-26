@@ -689,6 +689,51 @@ async function handleLogout(request) {
   return success(null, 'Logout successful', request);
 }
 
+async function handleChangePassword(request, JWT_SECRET) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ success: false, error: 'Method Not Allowed', message: 'POST required' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json', ...makeCorsHeaders(request) },
+    });
+  }
+
+  const payload = await requireAuth(request, JWT_SECRET);
+  if (payload instanceof Response) return payload;
+
+  try {
+    const body = await request.json();
+    const { currentPassword, newPassword } = body;
+
+    if (!currentPassword || !newPassword) {
+      return apiError('Current password and new password are required', 400, 'VALIDATION_ERROR', request);
+    }
+
+    if (newPassword.length < 6) {
+      return apiError('New password must be at least 6 characters', 400, 'VALIDATION_ERROR', request);
+    }
+
+    const user = await kvGetJson('users:' + payload.userId);
+    if (!user) return notFound('User not found', request);
+
+    // Verify current password
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isValid) {
+      return apiError('Current password is incorrect', 401, 'INVALID_PASSWORD', request);
+    }
+
+    // Hash and save new password
+    user.passwordHash = await hashPassword(newPassword);
+    user.updatedAt = new Date().toISOString();
+    await kvSetJson('users:' + payload.userId, user);
+
+    console.log('[Password] Password changed for user:', payload.userId);
+    return success(null, 'Password changed successfully', request);
+  } catch (e) {
+    console.error('[ChangePassword] Error:', e);
+    return apiError('Invalid request', 400, 'BAD_REQUEST', request);
+  }
+}
+
 // ============================================================
 // 路由处理器 - 用户管理 (管理员)
 // ============================================================
@@ -1883,6 +1928,7 @@ export async function onRequest(context) {
     if (segments[1] === 'login') return handleLogin(request, JWT_SECRET);
     if (segments[1] === 'me') return handleMe(request, JWT_SECRET);
     if (segments[1] === 'logout') return handleLogout(request);
+    if (segments[1] === 'change-password') return handleChangePassword(request, JWT_SECRET);
   }
 
   // ========================================

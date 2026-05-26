@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import {
   User, Palette, Quote, Bell, Shield, Info, Moon, Sun, Monitor,
   RotateCcw, Plug, BookOpen, Github, Activity, Bug,
-  Sparkles, Plus, Trash2, Check, X,
+  Sparkles, Plus, Trash2, Check, X, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -37,6 +37,11 @@ function SettingsContent() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Password visibility toggles
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // AI Model management
   const [showAddModel, setShowAddModel] = useState(false);
@@ -109,15 +114,24 @@ function SettingsContent() {
       toast.error('两次输入的新密码不一致');
       return;
     }
+    if (currentPassword === newPassword) {
+      toast.error('新密码不能与当前密码相同');
+      return;
+    }
     setSavingPassword(true);
     try {
-      // API call to update password (backend handles verification)
-      toast.success('密码已修改');
+      await api.changePassword(currentPassword, newPassword);
+      toast.success('密码已修改，请牢记新密码');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch {
-      toast.error('密码修改失败');
+      // Reset visibility toggles
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
+    } catch (err: any) {
+      const message = err?.message || err?.error || '密码修改失败，请检查当前密码是否正确';
+      toast.error(message);
     } finally {
       setSavingPassword(false);
     }
@@ -230,35 +244,68 @@ function SettingsContent() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label>修改密码</Label>
-                  <Input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="输入当前密码"
-                    className="mt-1.5"
-                  />
+                  <Label>当前密码</Label>
+                  <div className="relative mt-1.5">
+                    <Input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="输入当前密码"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      tabIndex={-1}
+                      aria-label={showCurrentPassword ? '隐藏密码' : '显示密码'}
+                    >
+                      {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <Label>新密码</Label>
-                    <Input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="输入新密码（至少6位）"
-                      className="mt-1.5"
-                    />
+                    <div className="relative mt-1.5">
+                      <Input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="输入新密码（至少6位）"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        tabIndex={-1}
+                        aria-label={showNewPassword ? '隐藏密码' : '显示密码'}
+                      >
+                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <Label>确认新密码</Label>
-                    <Input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="再次输入新密码"
-                      className="mt-1.5"
-                    />
+                    <div className="relative mt-1.5">
+                      <Input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="再次输入新密码"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        tabIndex={-1}
+                        aria-label={showConfirmPassword ? '隐藏密码' : '显示密码'}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex justify-end">

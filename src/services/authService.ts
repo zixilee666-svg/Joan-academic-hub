@@ -23,4 +23,7 @@ export const authService = {
 
   updateProfile: (data: Partial<User>) =>
     apiClient.put<User>('/auth/me', data),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    apiClient.post<null>('/auth/change-password', { currentPassword, newPassword }),
 };
