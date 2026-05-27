@@ -138,9 +138,9 @@ export default function KnowledgeGraphPage() {
             {/* 图谱画布 */}
             <div className="h-[600px] border rounded-lg overflow-hidden bg-slate-50 relative">
               <KnowledgeGraphCanvas
-                entities={filteredEntities}
-                relations={allRelations}
-                onSelectEntity={openEntityDetail}
+                nodes={filteredEntities}
+                links={allRelations}
+                onNodeClick={openEntityDetail}
               />
             </div>
 
