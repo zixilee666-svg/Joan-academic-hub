@@ -67,8 +67,8 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white dark:bg-primary-800 border-r border-primary-100 dark:border-primary-700 shadow-card">
+      {/* Sidebar - Desktop (fixed, does not scroll with main content) */}
+      <aside className="hidden lg:flex fixed left-0 top-0 z-30 h-screen flex-col w-64 bg-white dark:bg-primary-800 border-r border-primary-100 dark:border-primary-700 shadow-card">
         {/* Logo */}
         <div className="p-6 border-b border-primary-100 dark:border-primary-700">
           <div className="flex items-center gap-3">
@@ -191,8 +191,8 @@ export default function AppLayout() {
         </div>
       )}
 
-      {/* Main content */}
-      <main className="flex-1 lg:ml-0 mt-14 lg:mt-0 flex flex-col">
+      {/* Main content — offset by sidebar width on desktop */}
+      <main className="flex-1 lg:ml-64 mt-14 lg:mt-0 flex flex-col">
         <motion.div
           key={location.pathname}
           initial={{ opacity: 0, y: 10 }}
