@@ -212,44 +212,52 @@ export default function MaterialViewPage() {
       return <LinkViewer material={material} />;
     }
 
-    // Inline content for markdown / note
-    if ((material.type === 'markdown' || material.type === 'note') && material.content) {
-      return <TextViewer text={material.content} type={material.type} />;
-    }
-
-    // File-based preview
     const ext = getFileExt(material.fileName);
     const url = material.fileUrl;
+    const hasContent = !!material.content;
 
-    if (!url) {
-      return (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <AlertCircle className="h-16 w-16 text-muted-foreground mb-4" />
-          <p className="text-lg font-medium text-muted-foreground">此资料暂无可预览内容</p>
-        </div>
-      );
+    // ── 优先：用 content 渲染文本类格式 ──
+    // TXT / MD / Markdown：直接渲染 content
+    if (['txt', 'md', 'markdown'].includes(ext) && hasContent) {
+      return <TextViewer text={material.content!} type={ext} />;
+    }
+    // DOCX：有 content 则渲染（KV 存储场景）
+    if (ext === 'docx' && hasContent) {
+      return <TextViewer text={material.content!} type="docx" />;
+    }
+    // NOTE / MARKDOWN 类型（type 字段判断）
+    if ((material.type === 'note' || material.type === 'markdown') && hasContent) {
+      return <TextViewer text={material.content!} type={material.type} />;
     }
 
-    if (ext === 'pdf' || material.type === 'pdf') {
-      return <PdfViewer fileUrl={url} />;
-    }
-    if (ext === 'docx') {
-      // If fileUrl is available, fetch and render; otherwise fall back to stored content
-      if (url) {
+    // ── 次选：用 fileUrl 渲染（需远端文件） ──
+    if (url) {
+      if (ext === 'pdf' || material.type === 'pdf') {
+        return <PdfViewer fileUrl={url} />;
+      }
+      if (ext === 'docx') {
         return <DocxViewer fileUrl={url} />;
       }
-      if (material.content) {
-        return <TextViewer text={material.content} type="docx" />;
-      }
-    }
-    if (['txt', 'md', 'markdown'].includes(ext)) {
-      return <TextViewer text={material.content || '【此文件暂无文本内容】'} type={ext} />;
-    }
-    if (['ppt', 'pptx'].includes(ext)) {
-      return <UnsupportedViewer fileUrl={url} fileName={material.fileName} />;
     }
 
-    return <UnsupportedViewer fileUrl={url} fileName={material.fileName} />;
+    // ── 均无：提示无可预览内容 ──
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <AlertCircle className="h-16 w-16 text-muted-foreground mb-4" />
+        <p className="text-lg font-medium text-muted-foreground">此资料暂无可预览内容</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          {hasContent ? '内容格式不支持在线预览' : '未检测到可预览的文件内容或链接'}
+        </p>
+        {url && (
+          <Button asChild variant="outline" className="mt-4 gap-2">
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              下载或外部打开
+            </a>
+          </Button>
+        )}
+      </div>
+    );
   };
 
   if (loading) {

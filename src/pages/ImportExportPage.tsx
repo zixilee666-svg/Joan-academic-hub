@@ -319,8 +319,8 @@ export default function ImportExportPage() {
           if (content.length > 50000) {
             content = content.substring(0, 50000) + '\n\n[内容已截断，原始文件过大]';
           }
-        } else if (ext === 'docx') {
-          // Extract text from DOCX for KV storage preview
+        } else if (ext === 'docx' || ext === 'pdf') {
+          // Extract text from DOCX/PDF for KV storage preview
           content = await extractTextFromFile(file);
         }
 
