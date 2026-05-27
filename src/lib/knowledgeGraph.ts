@@ -20,7 +20,7 @@ interface LocalKnowledgeGraph {
   updatedAt: string;
 }
 
-function getLocalKG(): LocalKnowledgeGraph {
+export function getLocalKG(): LocalKnowledgeGraph {
   try {
     const raw = localStorage.getItem(LOCAL_KG_KEY);
     if (raw) {

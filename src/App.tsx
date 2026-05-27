@@ -18,6 +18,7 @@ import MyLibraryPage from '@/pages/MyLibraryPage';
 import MaterialsPage from '@/pages/MaterialsPage';
 import MaterialViewPage from '@/pages/MaterialViewPage';
 import AIChatPage from '@/pages/AIChatPage';
+import KnowledgeGraphPage from '@/pages/KnowledgeGraphPage';
 import AppLayout from '@/components/layout/AppLayout';
 import PublicLayout from '@/components/layout/PublicLayout';
 import AuthPage from '@/pages/AuthPage';
@@ -92,7 +93,7 @@ function AppRoutes() {
           <Route path="project/:id" element={<ProjectDetailPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="import-export" element={<ImportExportPage />} />
-          <Route path="knowledge" element={<KnowledgePage />} />
+          <Route path="knowledge" element={<KnowledgeGraphPage />} />
         </Route>
 
         {/* 管理员路由 */}
@@ -112,7 +113,7 @@ function AppRoutes() {
           <Route path="settings" element={<SettingsPage />} />
           <Route path="admin" element={<AdminPage />} />
           <Route path="import-export" element={<ImportExportPage />} />
-          <Route path="knowledge" element={<KnowledgePage />} />
+          <Route path="knowledge" element={<KnowledgeGraphPage />} />
         </Route>
       </Routes>
     </AnimatePresence>
