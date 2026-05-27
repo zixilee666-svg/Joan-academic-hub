@@ -1,13 +1,15 @@
-// =======================================
-// Knowledge Graph Canvas — 力导向图谱可视化 v1.0
-// 纯 Canvas 实现，无第三方依赖
-// =======================================
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import type { KnowledgeEntity, KnowledgeRelation } from '@/lib/knowledgeGraph';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  ZoomIn, ZoomOut, RotateCcw, Move, Info,
+  Circle, Square, Diamond, Triangle, Hexagon
+} from 'lucide-react';
+
+// ===== Types =====
 
 interface GraphNode {
   id: string;
-  label: string;
+  name: string;
   type: string;
   x: number;
   y: number;
@@ -16,333 +18,642 @@ interface GraphNode {
   radius: number;
   color: string;
   borderColor: string;
-  selected: boolean;
+  shape: 'circle' | 'square' | 'diamond' | 'triangle' | 'hexagon';
+  fontSize: number;
 }
 
-interface GraphEdge {
-  source: GraphNode;
-  target: GraphNode;
-  type: string;
+interface GraphLink {
+  source: string;
+  target: string;
+  relation: string;
   weight: number;
 }
 
-const TYPE_COLORS: Record<string, { bg: string; border: string }> = {
-  concept:  { bg: '#dbeafe', border: '#3b82f6' },
-  paper:    { bg: '#dcfce7', border: '#22c55e' },
-  method:   { bg: '#f3e8ff', border: '#a855f7' },
-  dataset:  { bg: '#ffedd5', border: '#f97316' },
-  task:     { bg: '#fce7f3', border: '#ec4899' },
-  metric:   { bg: '#fef9c3', border: '#eab308' },
-  code:     { bg: '#f3f4f6', border: '#6b7280' },
-  note:     { bg: '#ccfbf1', border: '#14b8a6' },
-  author:   { bg: '#fee2e2', border: '#ef4444' },
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  is_a: '是一种', part_of: '属于', used_in: '被用于',
-  proposed_in: '被提出', outperforms: '优于', cites: '引用',
-  related_to: '相关', has_code: '有代码',
-};
-
-// ---- 力导向模拟 ----
-function simulateForces(
-  nodes: GraphNode[], edges: GraphEdge[],
-  width: number, height: number, iterations: number = 100
-) {
-  const CENTER_X = width / 2;
-  const CENTER_Y = height / 2;
-  const CENTER_FORCE = 0.01;
-
-  for (let iter = 0; iter < iterations; iter++) {
-    // 斥力：节点间互相排斥
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const dx = nodes[j].x - nodes[i].x;
-        const dy = nodes[j].y - nodes[i].y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = 800 / (dist * dist); // 斥力强度
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        nodes[i].vx -= fx;
-        nodes[i].vy -= fy;
-        nodes[j].vx += fx;
-        nodes[j].vy += fy;
-      }
-    }
-
-    // 引力：边连接的节点互相吸引
-    for (const edge of edges) {
-      const dx = edge.target.x - edge.source.x;
-      const dy = edge.target.y - edge.source.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const idealLen = 180;
-      const force = (dist - idealLen) * 0.005 * (edge.weight || 0.5);
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      edge.source.vx += fx;
-      edge.source.vy += fy;
-      edge.target.vx -= fx;
-      edge.target.vy -= fy;
-    }
-
-    // 中心引力
-    for (const node of nodes) {
-      node.vx += (CENTER_X - node.x) * CENTER_FORCE;
-      node.vy += (CENTER_Y - node.y) * CENTER_FORCE;
-    }
-
-    // 更新位置 + 阻尼
-    for (const node of nodes) {
-      node.vx *= 0.85;
-      node.vy *= 0.85;
-      node.x += node.vx;
-      node.y += node.vy;
-      // 限制在画布内
-      node.x = Math.max(node.radius, Math.min(width - node.radius, node.x));
-      node.y = Math.max(node.radius, Math.min(height - node.radius, node.y));
-    }
-  }
+interface KnowledgeGraphCanvasProps {
+  nodes: { id: string; name: string; type: string }[];
+  links: { source: string; target: string; relation: string; weight?: number }[];
+  onNodeClick?: (nodeId: string) => void;
 }
 
-// ---- 绘制 ----
-function drawGraph(
+// ===== Color Palette - Vivid & High Contrast =====
+const TYPE_COLORS: Record<string, { fill: string; border: string; shape: GraphNode['shape'] }> = {
+  concept:   { fill: '#E8F4FD', border: '#2196F3', shape: 'circle' },
+  paper:     { fill: '#FFF3E0', border: '#FF9800', shape: 'diamond' },
+  method:    { fill: '#F3E5F5', border: '#9C27B0', shape: 'hexagon' },
+  dataset:   { fill: '#E8F5E9', border: '#4CAF50', shape: 'square' },
+  task:      { fill: '#FFEBEE', border: '#F44336', shape: 'triangle' },
+  metric:    { fill: '#E0F2F1', border: '#009688', shape: 'circle' },
+  code:      { fill: '#ECEFF1', border: '#607D8B', shape: 'square' },
+  note:      { fill: '#FFF8E1', border: '#FFC107', shape: 'circle' },
+  author:    { fill: '#FCE4EC', border: '#E91E63', shape: 'circle' },
+};
+
+const DEFAULT_COLOR = { fill: '#F5F5F5', border: '#9E9E9E', shape: 'circle' as const };
+
+const RELATION_LABELS: Record<string, string> = {
+  is_a: '是一种', part_of: '属于', used_in: '被用于',
+  proposed_in: '被提出于', outperforms: '优于', cites: '引用',
+  related_to: '相关于', has_code: '有代码实现',
+};
+
+// ===== Shape Drawing =====
+function drawShape(
   ctx: CanvasRenderingContext2D,
-  nodes: GraphNode[], edges: GraphEdge[],
-  width: number, height: number,
-  offsetX: number, offsetY: number, scale: number
+  x: number, y: number,
+  radius: number,
+  shape: GraphNode['shape'],
+  fill: string,
+  border: string,
+  isHovered: boolean,
+  isSelected: boolean
 ) {
-  ctx.clearRect(0, 0, width, height);
-
-  // 背景
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, width, height);
-
+  const r = radius;
   ctx.save();
-  ctx.translate(offsetX, offsetY);
-  ctx.scale(scale, scale);
 
-  // 绘制边
-  for (const edge of edges) {
-    const sx = edge.source.x, sy = edge.source.y;
-    const tx = edge.target.x, ty = edge.target.y;
+  // Drop shadow for depth
+  ctx.shadowColor = isHovered ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.12)';
+  ctx.shadowBlur = isHovered ? 16 : 8;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = isHovered ? 4 : 2;
 
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(tx, ty);
-    ctx.strokeStyle = edge.weight > 0.7 ? '#94a3b8' : '#cbd5e1';
-    ctx.lineWidth = 1 + (edge.weight || 0.5) * 2;
-    ctx.globalAlpha = 0.6;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // 关系标签（中间）
-    const mx = (sx + tx) / 2, my = (sy + ty) / 2;
-    const label = TYPE_LABELS[edge.type] || edge.type;
-    ctx.font = '10px sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, mx, my - 4);
+  ctx.beginPath();
+  switch (shape) {
+    case 'square':
+      ctx.rect(x - r, y - r, r * 2, r * 2);
+      break;
+    case 'diamond':
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r * 1.3, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r * 1.3, y);
+      ctx.closePath();
+      break;
+    case 'triangle':
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r * 1.2, y + r);
+      ctx.lineTo(x - r * 1.2, y + r);
+      ctx.closePath();
+      break;
+    case 'hexagon':
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const px = x + r * Math.cos(angle);
+        const py = y + r * Math.sin(angle);
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    default: // circle
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      break;
   }
 
-  // 绘制节点
-  for (const node of nodes) {
-    const { x, y, radius, color, borderColor, label, selected } = node;
+  // Fill
+  ctx.fillStyle = fill;
+  ctx.fill();
 
-    // 阴影
+  // Border
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = isSelected ? 3.5 : isHovered ? 2.5 : 2;
+  ctx.strokeStyle = isSelected ? '#1a237e' : border;
+  ctx.stroke();
+
+  // Inner highlight (glossy effect)
+  if (shape === 'circle') {
     ctx.beginPath();
-    ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fill();
-
-    // 节点圆
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = selected ? '#1e293b' : borderColor;
-    ctx.lineWidth = selected ? 3 : 1.5;
-    ctx.stroke();
-
-    // 标签
-    ctx.font = '11px sans-serif';
-    ctx.fillStyle = '#1e293b';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    const displayLabel = label.length > 10 ? label.slice(0, 9) + '…' : label;
-    ctx.fillText(displayLabel, x, y + radius + 4);
   }
 
   ctx.restore();
 }
 
-// ---- 主组件 ----
-interface Props {
-  entities: KnowledgeEntity[];
-  relations: KnowledgeRelation[];
-  onSelectEntity: (entity: KnowledgeEntity) => void;
+// ===== Text Drawing =====
+function drawNodeText(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  text: string,
+  fontSize: number,
+  maxWidth: number,
+  isHovered: boolean
+) {
+  ctx.save();
+  ctx.font = `${isHovered ? '700' : '600'} ${fontSize}px "Inter", -apple-system, BlinkMacSystemFont, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Text background for readability
+  const lines: string[] = [];
+  const words = text.split(/(?=[A-Z])|(?<=[a-z])(?=[A-Z])|\s+/).filter(Boolean);
+  let currentLine = '';
+
+  for (const word of words) {
+    const test = currentLine + (currentLine ? ' ' : '') + word;
+    if (ctx.measureText(test).width <= maxWidth) {
+      currentLine = test;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  // If text too long, truncate to 2 lines
+  const displayLines = lines.slice(0, 2);
+  if (lines.length > 2) {
+    displayLines[1] = displayLines[1].slice(0, -3) + '...';
+  }
+
+  const lineHeight = fontSize * 1.3;
+  const totalHeight = displayLines.length * lineHeight;
+  const startY = y - totalHeight / 2 + lineHeight / 2;
+
+  // Draw text shadow for readability
+  ctx.shadowColor = 'rgba(255,255,255,0.9)';
+  ctx.shadowBlur = 6;
+
+  for (let i = 0; i < displayLines.length; i++) {
+    const line = displayLines[i];
+    const textY = startY + i * lineHeight;
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillText(line, x, textY);
+  }
+
+  ctx.restore();
 }
 
-export default function KnowledgeGraphCanvas({ entities, relations, onSelectEntity }: Props) {
+// ===== Component =====
+
+export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks, onNodeClick }: KnowledgeGraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState({ w: 800, h: 600 });
+  const animationRef = useRef<number>(0);
+  const initializedRef = useRef(false);
 
-  // 拖拽状态
-  const dragRef = useRef<{ active: boolean; nodeIdx: number; startX: number; startY: number } | null>(null);
-  const panRef = useRef<{ active: boolean; startX: number; startY: number; ox: number; oy: number } | null>(null);
-
-  // 构建图数据
-  const graphData = useMemo(() => {
-    const nodes: GraphNode[] = entities.map((e, i) => {
-      const colors = TYPE_COLORS[e.type] || { bg: '#f3f4f6', border: '#6b7280' };
-      // 初始位置：按类型分组，环形分布
-      const angle = (i / entities.length) * Math.PI * 2;
-      const radius = Math.min(dimensions.width, dimensions.height) * 0.3;
-      return {
-        id: e.id,
-        label: e.name,
-        type: e.type,
-        x: dimensions.width / 2 + Math.cos(angle) * radius,
-        y: dimensions.height / 2 + Math.sin(angle) * radius,
-        vx: 0, vy: 0,
-        radius: Math.max(20, Math.min(36, 16 + (e.name.length > 15 ? 8 : 0))),
-        color: colors.bg,
-        borderColor: colors.border,
-        selected: e.id === selectedId,
-      };
-    });
-
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-    const edges: GraphEdge[] = relations
-      .map(r => {
-        const src = nodeMap.get(r.source);
-        const tgt = nodeMap.get(r.target);
-        if (!src || !tgt) return null;
-        return { source: src, target: tgt, type: r.type, weight: r.weight || 0.5 };
-      })
-      .filter(Boolean) as GraphEdge[];
-
-    // 运行力导向
-    simulateForces(nodes, edges, dimensions.width, dimensions.height, 150);
-
-    return { nodes, edges };
-  }, [entities, relations, selectedId, dimensions]);
-
-  // 绘制循环
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    drawGraph(ctx, graphData.nodes, graphData.edges, dimensions.width, dimensions.height, offset.x, offset.y, scale);
-  }, [graphData, dimensions, offset, scale]);
-
-  // 自适应尺寸
-  useEffect(() => {
-    const handleResize = () => {
-      const parent = canvasRef.current?.parentElement;
-      if (parent) {
-        setDimensions({ width: parent.clientWidth, height: Math.max(500, parent.clientHeight) });
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+  // Type icon mapping
+  const typeIcon = useCallback((type: string) => {
+    switch (type) {
+      case 'concept': return <Circle className="w-3 h-3" />;
+      case 'paper': return <Diamond className="w-3 h-3" />;
+      case 'method': return <Hexagon className="w-3 h-3" />;
+      case 'dataset': return <Square className="w-3 h-3" />;
+      case 'task': return <Triangle className="w-3 h-3" />;
+      default: return <Circle className="w-3 h-3" />;
+    }
   }, []);
 
-  // 坐标转换：屏幕 → 画布
-  const screenToCanvas = useCallback((sx: number, sy: number) => {
+  // Build graph nodes
+  const nodes = useMemo<GraphNode[]>(() => {
+    const w = dimensions.w;
+    const h = dimensions.h;
+    return rawNodes.map(n => {
+      const color = TYPE_COLORS[n.type] || DEFAULT_COLOR;
+      return {
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        x: w / 2 + (Math.random() - 0.5) * w * 0.5,
+        y: h / 2 + (Math.random() - 0.5) * h * 0.5,
+        vx: 0, vy: 0,
+        radius: 38,
+        color: color.fill,
+        borderColor: color.border,
+        shape: color.shape,
+        fontSize: 11,
+      };
+    });
+  }, [rawNodes, dimensions]);
+
+  const links = useMemo<GraphLink[]>(() =>
+    rawLinks.map(l => ({
+      source: l.source,
+      target: l.target,
+      relation: RELATION_LABELS[l.relation] || l.relation,
+      weight: l.weight ?? 1,
+    })),
+    [rawLinks]
+  );
+
+  // Force simulation state refs
+  const nodeMapRef = useRef<Map<string, GraphNode>>(new Map());
+
+  useEffect(() => {
+    const map = new Map<string, GraphNode>();
+    nodes.forEach(n => map.set(n.id, n));
+    nodeMapRef.current = map;
+  }, [nodes]);
+
+  // Resize handler
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setDimensions({ w: rect.width, h: rect.height });
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  // Force simulation
+  useEffect(() => {
+    if (nodes.length === 0) return;
+
+    const w = dimensions.w;
+    const h = dimensions.h;
+    const nodeMap = nodeMapRef.current;
+
+    let frame = 0;
+
+    const simulate = () => {
+      frame++;
+      // Run physics for 300 frames initially, then only when dragging
+      if (frame > 300 && !isDragging && !draggingNode) {
+        draw();
+        animationRef.current = requestAnimationFrame(simulate);
+        return;
+      }
+
+      // Repulsion
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const force = (1800 * 1800) / (dist * dist);
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          a.vx -= fx; a.vy -= fy;
+          b.vx += fx; b.vy += fy;
+        }
+      }
+
+      // Spring (links)
+      for (const link of links) {
+        const a = nodeMap.get(link.source);
+        const b = nodeMap.get(link.target);
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const targetDist = 140;
+        const force = (dist - targetDist) * 0.008;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      }
+
+      // Center gravity
+      for (const node of nodes) {
+        const dx = w / 2 - node.x;
+        const dy = h / 2 - node.y;
+        node.vx += dx * 0.0008;
+        node.vy += dy * 0.0008;
+      }
+
+      // Apply velocity with damping
+      for (const node of nodes) {
+        if (node.id === draggingNode) continue;
+        node.vx *= 0.92;
+        node.vy *= 0.92;
+        node.x += node.vx;
+        node.y += node.vy;
+
+        // Boundary constraint
+        const margin = 60;
+        node.x = Math.max(margin, Math.min(w - margin, node.x));
+        node.y = Math.max(margin, Math.min(h - margin, node.y));
+      }
+
+      draw();
+      animationRef.current = requestAnimationFrame(simulate);
+    };
+
+    const draw = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Background with subtle gradient
+      const bgGradient = ctx.createLinearGradient(0, 0, w, h);
+      bgGradient.addColorStop(0, '#f8fafc');
+      bgGradient.addColorStop(1, '#eef2f7');
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, w, h);
+
+      // Subtle grid pattern
+      ctx.strokeStyle = 'rgba(200,210,225,0.3)';
+      ctx.lineWidth = 1;
+      const gridSize = 40;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(scale, scale);
+
+      // Draw links
+      for (const link of links) {
+        const a = nodeMap.get(link.source);
+        const b = nodeMap.get(link.target);
+        if (!a || !b) continue;
+
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        const startX = a.x + nx * (a.radius + 3);
+        const startY = a.y + ny * (a.radius + 3);
+        const endX = b.x - nx * (b.radius + 3);
+        const endY = b.y - ny * (b.radius + 3);
+
+        // Link gradient
+        const grad = ctx.createLinearGradient(startX, startY, endX, endY);
+        grad.addColorStop(0, a.borderColor + '80');
+        grad.addColorStop(1, b.borderColor + '80');
+
+        // Shadow for links
+        ctx.shadowColor = 'rgba(0,0,0,0.08)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = Math.max(1.5, link.weight * 2);
+        ctx.stroke();
+
+        ctx.shadowColor = 'transparent';
+
+        // Arrow
+        const arrowSize = 10;
+        const arrowX = endX - nx * arrowSize * 1.5;
+        const arrowY = endY - ny * arrowSize * 1.5;
+        const perpX = -ny;
+        const perpY = nx;
+
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(
+          arrowX + perpX * arrowSize * 0.5,
+          arrowY + perpY * arrowSize * 0.5
+        );
+        ctx.lineTo(
+          arrowX - perpX * arrowSize * 0.5,
+          arrowY - perpY * arrowSize * 0.5
+        );
+        ctx.closePath();
+        ctx.fillStyle = b.borderColor + 'CC';
+        ctx.fill();
+
+        // Relation label
+        if (scale > 0.5) {
+          const mx = (startX + endX) / 2;
+          const my = (startY + endY) / 2;
+          const angle = Math.atan2(dy, dx);
+
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(angle > Math.PI / 2 || angle < -Math.PI / 2 ? angle + Math.PI : angle);
+
+          const text = link.relation;
+          ctx.font = 'bold 10px "Inter", sans-serif';
+          const textWidth = ctx.measureText(text).width;
+          const padX = 6;
+          const padY = 3;
+
+          // Label background
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.strokeStyle = '#d0d5dd';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(-textWidth / 2 - padX, -7 - padY, textWidth + padX * 2, 14 + padY * 2, 4);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#374151';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, 0, 0);
+          ctx.restore();
+        }
+      }
+
+      // Draw nodes
+      for (const node of nodes) {
+        const isHovered = hoveredNode === node.id;
+        const isSelected = selectedNode === node.id;
+        drawShape(ctx, node.x, node.y, node.radius, node.shape, node.color, node.borderColor, isHovered, isSelected);
+        drawNodeText(ctx, node.x, node.y, node.name, node.fontSize, node.radius * 1.6, isHovered);
+      }
+
+      ctx.restore();
+    };
+
+    initializedRef.current = true;
+    simulate();
+
+    return () => cancelAnimationFrame(animationRef.current);
+  }, [nodes, links, scale, offset, hoveredNode, selectedNode, isDragging, draggingNode, dimensions]);
+
+  // Mouse handlers
+  const toWorld = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (sx - rect.left - offset.x) / scale,
-      y: (sy - rect.top - offset.y) / scale,
+      x: (clientX - rect.left - offset.x) / scale,
+      y: (clientY - rect.top - offset.y) / scale,
     };
   }, [offset, scale]);
 
-  // 命中检测
-  const hitTest = useCallback((sx: number, sy: number) => {
-    const { x, y } = screenToCanvas(sx, sy);
-    // 从后往前检测（上层节点优先）
-    for (let i = graphData.nodes.length - 1; i >= 0; i--) {
-      const n = graphData.nodes[i];
-      const dx = x - n.x, dy = y - n.y;
-      if (dx * dx + dy * dy <= n.radius * n.radius) return i;
+  const getNodeAt = useCallback((wx: number, wy: number) => {
+    const nodeMap = nodeMapRef.current;
+    for (const node of nodeMap.values()) {
+      const dx = wx - node.x;
+      const dy = wy - node.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= node.radius + 5) return node;
     }
-    return -1;
-  }, [graphData.nodes, screenToCanvas]);
+    return null;
+  }, []);
 
-  // 鼠标事件
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    const idx = hitTest(e.clientX, e.clientY);
-    if (idx >= 0) {
-      // 拖拽节点
-      dragRef.current = { active: true, nodeIdx: idx, startX: e.clientX, startY: e.clientY };
-      setSelectedId(graphData.nodes[idx].id);
-      onSelectEntity(entities.find(en => en.id === graphData.nodes[idx].id)!);
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const { x: wx, y: wy } = toWorld(e.clientX, e.clientY);
+    const node = getNodeAt(wx, wy);
+    if (node) {
+      setDraggingNode(node.id);
+      setSelectedNode(node.id);
     } else {
-      // 平移画布
-      panRef.current = { active: true, startX: e.clientX, startY: e.clientY, ox: offset.x, oy: offset.y };
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
     }
-  }, [hitTest, graphData.nodes, entities, onSelectEntity, offset]);
+  };
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (dragRef.current?.active) {
-      const dx = e.clientX - dragRef.current.startX;
-      const dy = e.clientY - dragRef.current.startY;
-      // 直接移动节点（在力导向中会被覆盖，这里仅做视觉反馈）
-      dragRef.current.startX = e.clientX;
-      dragRef.current.startY = e.clientY;
-    } else if (panRef.current?.active) {
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const { x: wx, y: wy } = toWorld(e.clientX, e.clientY);
+    const node = getNodeAt(wx, wy);
+    setHoveredNode(node ? node.id : null);
+
+    if (draggingNode && nodeMapRef.current.has(draggingNode)) {
+      const n = nodeMapRef.current.get(draggingNode)!;
+      n.x = wx;
+      n.y = wy;
+      n.vx = 0;
+      n.vy = 0;
+    } else if (isDragging) {
       setOffset({
-        x: panRef.current.ox + (e.clientX - panRef.current.startX),
-        y: panRef.current.oy + (e.clientY - panRef.current.startY),
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
       });
     }
-  }, []);
+  };
 
-  const handleMouseUp = useCallback(() => {
-    dragRef.current = null;
-    panRef.current = null;
-  }, []);
+  const handleMouseUp = () => {
+    if (draggingNode) {
+      setDraggingNode(null);
+    }
+    setIsDragging(false);
+  };
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale(s => Math.max(0.2, Math.min(3, s * delta)));
-  }, []);
+    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+    const newScale = Math.max(0.2, Math.min(3, scale * zoomFactor));
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    setOffset({
+      x: mouseX - (mouseX - offset.x) * (newScale / scale),
+      y: mouseY - (mouseY - offset.y) * (newScale / scale),
+    });
+    setScale(newScale);
+  };
+
+  const handleNodeClickInternal = (nodeId: string) => {
+    setSelectedNode(nodeId);
+    onNodeClick?.(nodeId);
+  };
+
+  // Controls
+  const handleZoomIn = () => setScale(s => Math.min(3, s * 1.25));
+  const handleZoomOut = () => setScale(s => Math.max(0.2, s / 1.25));
+  const handleReset = () => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  // Count by type
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    rawNodes.forEach(n => { counts[n.type] = (counts[n.type] || 0) + 1; });
+    return counts;
+  }, [rawNodes]);
 
   return (
-    <div className="w-full h-full border rounded-lg overflow-hidden bg-slate-50">
+    <div ref={containerRef} className="relative w-full h-full rounded-xl overflow-hidden border-2 border-gray-200/80 shadow-lg bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Legend */}
+      <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm border border-gray-200/80 rounded-lg px-3 py-2 shadow-md">
+        <div className="text-[10px] font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">节点类型</div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {Object.entries(TYPE_COLORS).map(([type, { border, fill }]) => (
+            typeCounts[type] ? (
+              <div key={type} className="flex items-center gap-1">
+                <span
+                  className="inline-block rounded-sm"
+                  style={{
+                    width: 10, height: 10,
+                    backgroundColor: fill,
+                    border: `2px solid ${border}`,
+                  }}
+                />
+                <span className="text-[11px] text-gray-600 font-medium">
+                  {type === 'concept' ? '概念' : type === 'paper' ? '论文' : type === 'method' ? '方法' : type === 'dataset' ? '数据集' : type === 'task' ? '任务' : type === 'metric' ? '指标' : type === 'code' ? '代码' : type === 'note' ? '笔记' : type === 'author' ? '作者' : type}
+                  <span className="text-gray-400 ml-0.5">({typeCounts[type]})</span>
+                </span>
+              </div>
+            ) : null
+          ))}
+        </div>
+      </div>
+
+      {/* Scale indicator */}
+      <div className="absolute top-3 right-3 z-10 bg-white/80 backdrop-blur-sm rounded-md px-2 py-1 text-[11px] text-gray-500 font-mono">
+        {(scale * 100).toFixed(0)}%
+      </div>
+
+      {/* Canvas */}
       <canvas
         ref={canvasRef}
-        width={dimensions.width}
-        height={dimensions.height}
+        style={{ width: dimensions.w, height: dimensions.h }}
         className="block cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onClick={(e) => {
+          const { x: wx, y: wy } = toWorld(e.clientX, e.clientY);
+          const node = getNodeAt(wx, wy);
+          if (node) handleNodeClickInternal(node.id);
+        }}
       />
-      {/* 缩放控制 */}
-      <div className="absolute bottom-4 right-4 flex gap-2">
-        <button
-          className="w-8 h-8 bg-white border rounded shadow flex items-center justify-center text-sm hover:bg-slate-50"
-          onClick={() => setScale(s => Math.min(3, s * 1.2))}
-        >+</button>
-        <button
-          className="w-8 h-8 bg-white border rounded shadow flex items-center justify-center text-sm hover:bg-slate-50"
-          onClick={() => setScale(s => Math.max(0.2, s / 1.2))}
-        >−</button>
-        <button
-          className="w-8 h-8 bg-white border rounded shadow flex items-center justify-center text-xs hover:bg-slate-50"
-          onClick={() => { setScale(1); setOffset({ x: 0, y: 0 }); }}
-        >⟲</button>
+
+      {/* Controls */}
+      <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-1.5">
+        <Button variant="secondary" size="icon" className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-md border border-gray-200 hover:bg-white" onClick={handleZoomIn}>
+          <ZoomIn className="w-4 h-4" />
+        </Button>
+        <Button variant="secondary" size="icon" className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-md border border-gray-200 hover:bg-white" onClick={handleZoomOut}>
+          <ZoomOut className="w-4 h-4" />
+        </Button>
+        <Button variant="secondary" size="icon" className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-md border border-gray-200 hover:bg-white" onClick={handleReset}>
+          <RotateCcw className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Bottom hint */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 text-[11px] text-gray-400 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-200/60">
+        <Move className="w-3 h-3" />
+        <span>拖拽平移 · 滚轮缩放 · 点击节点查看详情</span>
+        <Info className="w-3 h-3" />
       </div>
     </div>
   );
