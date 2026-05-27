@@ -212,18 +212,26 @@ export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks,
     }
   }, []);
 
-  // Build graph nodes
+  // Build graph nodes with deterministic circular initial layout
   const nodes = useMemo<GraphNode[]>(() => {
     const w = dimensions.w;
     const h = dimensions.h;
-    return rawNodes.map(n => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const count = rawNodes.length;
+    // Distribute nodes in a circle; if many nodes, use multiple rings
+    const ringRadius = Math.min(w, h) * 0.28;
+    return rawNodes.map((n, i) => {
       const color = TYPE_COLORS[n.type] || DEFAULT_COLOR;
+      // Angle-based placement for stability
+      const angle = (2 * Math.PI * i) / Math.max(count, 1) - Math.PI / 2;
+      const x = cx + ringRadius * Math.cos(angle);
+      const y = cy + ringRadius * Math.sin(angle);
       return {
         id: n.id,
         name: n.name,
         type: n.type,
-        x: w / 2 + (Math.random() - 0.5) * w * 0.5,
-        y: h / 2 + (Math.random() - 0.5) * h * 0.5,
+        x, y,
         vx: 0, vy: 0,
         radius: 38,
         color: color.fill,
@@ -288,7 +296,8 @@ export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks,
         return;
       }
 
-      // Repulsion
+      // Repulsion (scaled by node count to prevent explosion in small graphs)
+      const repulsionStrength = nodes.length <= 5 ? 800 * 800 : 1400 * 1400;
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i];
@@ -296,7 +305,9 @@ export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks,
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = (1800 * 1800) / (dist * dist);
+          // Soft cap: don't explode when nodes are very close
+          const safeDist = Math.max(dist, a.radius + b.radius + 10);
+          const force = repulsionStrength / (safeDist * safeDist);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
           a.vx -= fx; a.vy -= fy;
@@ -304,7 +315,10 @@ export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks,
         }
       }
 
-      // Spring (links)
+      // Spring (links) — stronger pull for sparse graphs
+      const linkCount = links.length;
+      const springStrength = linkCount < nodes.length ? 0.015 : 0.008;
+      const targetDist = Math.min(w, h) * 0.22;
       for (const link of links) {
         const a = nodeMap.get(link.source);
         const b = nodeMap.get(link.target);
@@ -312,20 +326,20 @@ export default function KnowledgeGraphCanvas({ nodes: rawNodes, links: rawLinks,
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const targetDist = 140;
-        const force = (dist - targetDist) * 0.008;
+        const force = (dist - targetDist) * springStrength;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.vx += fx; a.vy += fy;
         b.vx -= fx; b.vy -= fy;
       }
 
-      // Center gravity
+      // Center gravity (stronger for small graphs to keep nodes in view)
+      const centerStrength = nodes.length <= 5 ? 0.003 : 0.0012;
       for (const node of nodes) {
         const dx = w / 2 - node.x;
         const dy = h / 2 - node.y;
-        node.vx += dx * 0.0008;
-        node.vy += dy * 0.0008;
+        node.vx += dx * centerStrength;
+        node.vy += dy * centerStrength;
       }
 
       // Apply velocity with damping
