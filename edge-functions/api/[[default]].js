@@ -2606,52 +2606,123 @@ export async function onRequest(context) {
 
     try {
       const body = await request.json();
-      const { userId, apiKey } = body;
+      const { userId, apiKey, importNotes = true, importAttachments = false } = body;
       if (!userId || !apiKey) {
         return apiError('Zotero userId and apiKey are required', 400, 'VALIDATION_ERROR', request);
       }
 
-      const zoteroUrl = `https://api.zotero.org/users/${encodeURIComponent(userId)}/items?format=json&limit=25`;
-      const res = await fetch(zoteroUrl, {
-        method: 'GET',
-        headers: { 'Zotero-API-Key': apiKey, 'Accept': 'application/json' },
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error('[Zotero] API error:', res.status, errText);
-        return apiError('Zotero API error: ' + res.status, 502, 'EXTERNAL_API_ERROR', request);
-      }
-
-      const items = await res.json();
-      const papers = [];
-      for (const item of items) {
-        const d = item.data || {};
-        const creators = (d.creators || [])
-          .filter(c => c.creatorType === 'author')
-          .map(c => {
-            if (c.firstName && c.lastName) return `${c.firstName} ${c.lastName}`;
-            return c.name || c.lastName || c.firstName || '';
-          })
-          .filter(Boolean);
-        const yearMatch = (d.date || '').match(/(\d{4})/);
-        papers.push({
-          id: `zotero-${d.key || item.key}`,
-          title: d.title || '未命名文献',
-          authors: creators,
-          year: parseInt(yearMatch?.[1], 10) || new Date().getFullYear(),
-          venue: d.publicationTitle || d.publisher || '',
-          abstract: d.abstractNote || '',
-          doi: d.DOI || '',
-          url: d.url || '',
-          tags: (d.tags || []).map(t => t.tag).filter(Boolean),
-          citations: 0,
+      // 1. 获取用户所有文献项目（分页获取，每次100条）
+      let allItems = [];
+      let start = 0;
+      const limit = 100;
+      while (true) {
+        const zoteroUrl = `https://api.zotero.org/users/${encodeURIComponent(userId)}/items?format=json&limit=${limit}&start=${start}`;
+        const res = await fetch(zoteroUrl, {
+          method: 'GET',
+          headers: { 'Zotero-API-Key': apiKey, 'Accept': 'application/json' },
         });
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('[Zotero] API error:', res.status, errText);
+          return apiError('Zotero API error: ' + res.status, 502, 'EXTERNAL_API_ERROR', request);
+        }
+        const batch = await res.json();
+        allItems = allItems.concat(batch);
+        if (batch.length < limit) break; // 最后一页
+        start += limit;
       }
-      return success(papers, 'Success', request);
+
+      // 2. 分类：论文、笔记、附件
+      const papers = allItems.filter(i => i.data.itemType === 'journalArticle' || i.data.itemType === 'conferencePaper' || i.data.itemType === 'bookSection' || i.data.itemType === 'report');
+      const notes = allItems.filter(i => i.data.itemType === 'note');
+      const attachments = allItems.filter(i => i.data.itemType === 'attachment');
+
+      console.log(`[Zotero] Found: ${papers.length} papers, ${notes.length} notes, ${attachments.length} attachments`);
+
+      // 3. 处理每篇论文：匹配笔记和附件
+      const importedPapers = [];
+      const importedNotes = [];
+      const errors = [];
+
+      for (const paperItem of papers) {
+        try {
+          const d = paperItem.data;
+          const paperKey = d.key || paperItem.key;
+
+          // 提取作者
+          const creators = (d.creators || [])
+            .filter(c => c.creatorType === 'author')
+            .map(c => {
+              if (c.firstName && c.lastName) return `${c.firstName} ${c.lastName}`;
+              return c.name || c.lastName || c.firstName || '';
+            })
+            .filter(Boolean);
+
+          // 提取年份
+          const yearMatch = (d.date || '').match(/(\d{4})/);
+          const year = parseInt(yearMatch?.[1], 10) || new Date().getFullYear();
+
+          // 查找该论文的子笔记
+          const paperNotes = importNotes ? notes.filter(n => n.data.parentItem === paperKey) : [];
+          const paperNoteObjects = paperNotes.map(n => ({
+            id: `zotero-note-${n.data.key || n.key}`,
+            content: n.data.note || '',
+            createdAt: n.data.dateAdded || new Date().toISOString(),
+          }));
+
+          // 查找该论文的PDF附件（暂不下载，只记录存在）
+          const pdfAttachments = importAttachments ? attachments.filter(a => a.data.parentItem === paperKey && a.data.contentType === 'application/pdf') : [];
+
+          // 构建论文对象
+          const paperObj = {
+            id: `zotero-${paperKey}`,
+            title: d.title || '未命名文献',
+            authors: creators,
+            year,
+            venue: d.publicationTitle || d.publisher || '',
+            abstract: d.abstractNote || '',
+            doi: d.DOI || '',
+            url: d.url || '',
+            tags: (d.tags || []).map(t => t.tag).filter(Boolean),
+            citations: 0,
+            zoteroKey: paperKey,
+            noteCount: paperNoteObjects.length,
+            attachmentCount: pdfAttachments.length,
+            importedAt: new Date().toISOString(),
+          };
+
+          // 存储到KV
+          await kvSetJson('papers:' + paperObj.id, paperObj);
+
+          // 关联笔记也存储到KV（以paper为前缀）
+          if (paperNoteObjects.length > 0) {
+            await kvSetJson('papers:' + paperObj.id + ':notes', paperNoteObjects);
+            importedNotes.push(...paperNoteObjects);
+          }
+
+          importedPapers.push(paperObj);
+        } catch (itemErr) {
+          console.error('[Zotero] Error processing item:', itemErr.message);
+          errors.push({ key: paperItem.data?.key || 'unknown', error: itemErr.message });
+        }
+      }
+
+      // 4. 返回导入结果
+      return success({
+        papers: importedPapers,
+        notes: importedNotes,
+        stats: {
+          papers: importedPapers.length,
+          notes: importedNotes.length,
+          attachments: attachments.length,
+          errors: errors.length,
+        },
+        errors: errors.length > 0 ? errors : undefined,
+      }, `Zotero import complete: ${importedPapers.length} papers, ${importedNotes.length} notes`, request);
+
     } catch (e) {
       console.error('[Zotero] Error:', e);
-      return apiError('Zotero import failed', 500, 'EXTERNAL_API_ERROR', request);
+      return apiError('Zotero import failed: ' + (e.message || 'unknown'), 500, 'EXTERNAL_API_ERROR', request);
     }
   }
 

@@ -114,8 +114,9 @@ export default function ImportExportPage() {
     setIsSearching(true);
     setSearchResults([]);
     try {
-      const res = await api.importZotero(settings.zoteroUserId, settings.zoteroApiKey);
-      const results = (res.data || []).map((p: any) => ({
+      const res = await api.importZotero(settings.zoteroUserId, settings.zoteroApiKey, true, false);
+      const data = res.data || {};
+      const papers = (data.papers || []).map((p: any) => ({
         id: p.id,
         title: p.title || '',
         authors: p.authors || [],
@@ -128,8 +129,18 @@ export default function ImportExportPage() {
         url: p.url,
         tags: p.tags || [],
       }));
-      setSearchResults(results);
-      toast.success(`从 Zotero 加载 ${results.length} 条文献`);
+      setSearchResults(papers);
+      // 显示详细导入结果
+      const stats = data.stats || { papers: 0, notes: 0, attachments: 0, errors: 0 };
+      let msg = `导入完成: ${stats.papers} 篇文献`;
+      if (stats.notes > 0) msg += `, ${stats.notes} 条笔记`;
+      if (stats.attachments > 0) msg += `, ${stats.attachments} 个附件`;
+      if (stats.errors > 0) msg += ` (${stats.errors} 个错误)`;
+      toast.success(msg);
+      // 如果有错误，打印到控制台
+      if (data.errors && data.errors.length > 0) {
+        console.warn('[Zotero Import] Errors:', data.errors);
+      }
     } catch (err: any) {
       console.error('[Import] Zotero error:', err);
       toast.error('Zotero 导入失败: ' + (err.message || '请检查配置'));

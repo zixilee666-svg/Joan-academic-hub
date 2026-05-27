@@ -1434,10 +1434,10 @@ class ApiClient {
     );
   }
 
-  async importZotero(userId: string, apiKey: string) {
-    return this.request<{ success: boolean; data: any[] }>(
+  async importZotero(userId: string, apiKey: string, importNotes = true, importAttachments = false) {
+    return this.request<{ success: boolean; data: { papers: any[]; notes: any[]; stats: any; errors?: any[] } }>(
       '/import/zotero',
-      { method: 'POST', body: JSON.stringify({ userId, apiKey }) }
+      { method: 'POST', body: JSON.stringify({ userId, apiKey, importNotes, importAttachments }) }
     );
   }
 
