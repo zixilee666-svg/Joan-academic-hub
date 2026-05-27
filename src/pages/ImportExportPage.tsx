@@ -277,7 +277,8 @@ export default function ImportExportPage() {
   const handleFileImport = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
     const paperFormats = ['bib', 'bibtex', 'csv', 'json', 'ris'];
-    const materialFormats = ['pdf', 'md', 'markdown', 'docx', 'txt'];
+    const materialFormats = ['pdf', 'md', 'markdown', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'];
+    const imageFormats = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'];
     const allFormats = [...paperFormats, ...materialFormats];
 
     if (!ext || !allFormats.includes(ext)) {
@@ -322,10 +323,31 @@ export default function ImportExportPage() {
         } else if (ext === 'docx' || ext === 'pdf') {
           // Extract text from DOCX/PDF for KV storage preview
           content = await extractTextFromFile(file);
+        } else if (ext === 'csv') {
+          // CSV: read as text for table preview
+          content = await file.text();
+        } else if (imageFormats.includes(ext || '')) {
+          // Image: convert small images to base64 for KV storage
+          const MAX_IMG_SIZE = 2 * 1024 * 1024; // 2MB
+          if (file.size <= MAX_IMG_SIZE) {
+            const buffer = await file.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+            const mime = file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+            content = `data:${mime};base64,${base64}`;
+          } else {
+            content = `[图片文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，超过 2MB 限制，无法内嵌预览]`;
+          }
         }
 
-        const type = ext === 'pdf' ? 'pdf' : (ext === 'docx' ? 'file' : (ext === 'txt' ? 'note' : 'markdown'));
-        const category = ext === 'pdf' ? 'book' : (ext === 'docx' ? 'report' : 'notes');
+        const type = ext === 'pdf' ? 'pdf'
+          : ext === 'docx' ? 'file'
+          : ext === 'txt' ? 'note'
+          : imageFormats.includes(ext || '') ? 'image'
+          : 'markdown';
+        const category = ext === 'pdf' ? 'book'
+          : ext === 'docx' ? 'report'
+          : imageFormats.includes(ext || '') ? 'reference'
+          : 'notes';
 
         await api.createMaterial({
           title: file.name.replace(/\.[^.]+$/, ''),
@@ -716,7 +738,7 @@ export default function ImportExportPage() {
                   onClick={() => {
                     const input = document.createElement('input');
                     input.type = 'file';
-                    input.accept = '.bib,.bibtex,.csv,.json,.ris,.pdf,.md,.markdown,.docx,.txt';
+                    input.accept = '.bib,.bibtex,.csv,.json,.ris,.pdf,.md,.markdown,.docx,.txt,.png,.jpg,.jpeg,.gif,.svg,.webp,.bmp';
                     input.onchange = (e) => {
                       const file = (e.target as HTMLInputElement).files?.[0];
                       if (file) handleFileImport(file);
@@ -729,7 +751,7 @@ export default function ImportExportPage() {
                     拖拽文件到此处，或点击上传
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    文献: .bib / .csv / .ris / .json &nbsp;|&nbsp; 资料: .pdf / .md / .docx / .txt
+                    文献: .bib / .csv / .ris / .json &nbsp;|&nbsp; 资料: .pdf / .md / .docx / .txt / .csv &nbsp;|&nbsp; 图片: .png / .jpg / .gif / .svg / .webp
                   </p>
                 </div>
               </CardContent>

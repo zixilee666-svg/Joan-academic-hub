@@ -12,7 +12,7 @@ import {
   ArrowLeft, FileText, Link2, ExternalLink, Download,
   ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
   Loader2, AlertCircle, BookOpen, Hash, Calendar,
-  Tag, FileImage,
+  Tag, FileImage, Image as ImageIcon, Table as TableIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -135,6 +135,100 @@ function DocxViewer({ fileUrl }: { fileUrl: string }) {
   return <TextViewer text={text} type="docx" />;
 }
 
+// ── Image Viewer ──
+function ImageViewer({ src, alt }: { src: string; alt?: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState(false);
+
+  if (err) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <ImageIcon className="h-16 w-16 text-muted-foreground mb-4" />
+        <p className="text-lg font-medium text-muted-foreground">图片加载失败</p>
+        <p className="text-sm text-muted-foreground mt-1 break-all max-w-md">{src}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center">
+      {!loaded && (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt || '图片'}
+        className={cn('max-w-full max-h-[70vh] object-contain rounded-lg shadow-md', loaded ? 'block' : 'hidden')}
+        onLoad={() => setLoaded(true)}
+        onError={() => setErr(true)}
+      />
+    </div>
+  );
+}
+
+// ── CSV / Table Viewer ──
+function TableViewer({ content }: { content: string }) {
+  const rows = useMemo(() => {
+    // Simple CSV parser
+    const lines = content.trim().split(/\r?\n/).filter(l => l.trim());
+    return lines.map(line => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    });
+  }, [content]);
+
+  if (rows.length === 0) {
+    return <TextViewer text="【CSV 内容为空】" type="csv" />;
+  }
+
+  const headers = rows[0];
+  const dataRows = rows.slice(1);
+
+  return (
+    <div className="overflow-auto max-h-[70vh] rounded-lg border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted sticky top-0">
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} className="px-4 py-2 text-left font-medium border-b whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, ri) => (
+            <tr key={ri} className={cn('border-b', ri % 2 === 0 ? 'bg-background' : 'bg-muted/30')}>
+              {row.map((cell, ci) => (
+                <td key={ci} className="px-4 py-2 whitespace-nowrap">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Unsupported Viewer ──
 function UnsupportedViewer({ fileUrl, fileName }: { fileUrl?: string; fileName?: string }) {
   return (
@@ -216,31 +310,52 @@ export default function MaterialViewPage() {
     const url = material.fileUrl;
     const hasContent = !!material.content;
 
-    // ── 优先：用 content 渲染文本类格式 ──
-    // TXT / MD / Markdown：直接渲染 content
-    if (['txt', 'md', 'markdown'].includes(ext) && hasContent) {
-      return <TextViewer text={material.content!} type={ext} />;
-    }
-    // DOCX：有 content 则渲染（KV 存储场景）
-    if (ext === 'docx' && hasContent) {
-      return <TextViewer text={material.content!} type="docx" />;
-    }
-    // NOTE / MARKDOWN 类型（type 字段判断）
-    if ((material.type === 'note' || material.type === 'markdown') && hasContent) {
-      return <TextViewer text={material.content!} type={material.type} />;
+    // ── 1. 文本类：用 content 渲染 ──
+    if (hasContent) {
+      // TXT / MD / Markdown
+      if (['txt', 'md', 'markdown'].includes(ext)) {
+        return <TextViewer text={material.content!} type={ext} />;
+      }
+      // DOCX
+      if (ext === 'docx') {
+        return <TextViewer text={material.content!} type="docx" />;
+      }
+      // PDF text extraction
+      if (ext === 'pdf') {
+        return <TextViewer text={material.content!} type="pdf" />;
+      }
+      // CSV
+      if (ext === 'csv') {
+        return <TableViewer content={material.content!} />;
+      }
+      // NOTE / MARKDOWN type
+      if (material.type === 'note' || material.type === 'markdown') {
+        return <TextViewer text={material.content!} type={material.type} />;
+      }
+      // Content looks like an image URL or data URL
+      if (material.content!.match(/^https?:\/\/.*\.(png|jpe?g|gif|svg|webp|bmp)/i) ||
+          material.content!.startsWith('data:image/')) {
+        return <ImageViewer src={material.content!} alt={material.title} />;
+      }
     }
 
-    // ── 次选：用 fileUrl 渲染（需远端文件） ──
+    // ── 2. 文件类：用 fileUrl 渲染 ──
     if (url) {
+      // PDF
       if (ext === 'pdf' || material.type === 'pdf') {
         return <PdfViewer fileUrl={url} />;
       }
+      // DOCX
       if (ext === 'docx') {
         return <DocxViewer fileUrl={url} />;
       }
+      // Image
+      if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(ext)) {
+        return <ImageViewer src={url} alt={material.title} />;
+      }
     }
 
-    // ── 均无：提示无可预览内容 ──
+    // ── 3. 回退：文件信息 + 下载提示 ──
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <AlertCircle className="h-16 w-16 text-muted-foreground mb-4" />
