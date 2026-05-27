@@ -24,6 +24,7 @@ import { api } from '@/lib/api';
 import { useSettingsStore } from '@/store';
 import { cn } from '@/lib/utils';
 import { extractTextFromFile } from '@/lib/fileExtractor';
+import knowledgeGraphLib, { addZoteroPapersToLocalKG } from '@/lib/knowledgeGraph';
 
 export default function ImportExportPage() {
   const [activeTab, setActiveTab] = useState('import');
@@ -130,6 +131,12 @@ export default function ImportExportPage() {
         tags: p.tags || [],
       }));
       setSearchResults(papers);
+      // 将导入的论文添加到本地知识图谱
+      try {
+        addZoteroPapersToLocalKG(papers);
+      } catch (kgErr) {
+        console.warn('[Zotero Import] Failed to add to local KG:', kgErr);
+      }
       // 显示详细导入结果
       const stats = data.stats || { papers: 0, notes: 0, attachments: 0, errors: 0 };
       let msg = `导入完成: ${stats.papers} 篇文献`;

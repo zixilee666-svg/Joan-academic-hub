@@ -11,17 +11,103 @@ import projectKnowledgeGraph from '../data/projectKnowledge';
 
 let mergedGraph: KnowledgeGraph | null = null;
 
+// 本地动态知识图谱（从localStorage加载，用户导入的Zotero论文等）
+const LOCAL_KG_KEY = 'academic_hub_local_kg';
+
+interface LocalKnowledgeGraph {
+  entities: import('../types').KnowledgeEntity[];
+  relations: import('../types').KnowledgeRelation[];
+  updatedAt: string;
+}
+
+function getLocalKG(): LocalKnowledgeGraph {
+  try {
+    const raw = localStorage.getItem(LOCAL_KG_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch { /* ignore */ }
+  return { entities: [], relations: [], updatedAt: new Date().toISOString() };
+}
+
+function saveLocalKG(kg: LocalKnowledgeGraph): void {
+  try {
+    localStorage.setItem(LOCAL_KG_KEY, JSON.stringify(kg));
+  } catch (e) {
+    console.warn('[KG] Failed to save local KG:', e);
+  }
+}
+
+/** 将Zotero论文添加到本地知识图谱 */
+export function addZoteroPapersToLocalKG(papers: any[]): void {
+  const localKG = getLocalKG();
+  const now = new Date().toISOString();
+
+  for (const paper of papers) {
+    // 检查是否已存在（按zoteroKey或id去重）
+    const existingIdx = localKG.entities.findIndex(e => e.id === `paper:${paper.id}` || e.source === `zotero:${paper.zoteroKey}`);
+    if (existingIdx >= 0) {
+      // 更新现有实体
+      localKG.entities[existingIdx] = {
+        ...localKG.entities[existingIdx],
+        name: paper.title || localKG.entities[existingIdx].name,
+        description: (paper.abstract || '').slice(0, 200),
+        content: paper.abstract || '',
+        updatedAt: now,
+      };
+    } else {
+      // 添加新实体
+      localKG.entities.push({
+        id: `paper:${paper.id}`,
+        type: 'paper',
+        name: paper.title || 'Unknown',
+        description: (paper.abstract || '').slice(0, 200),
+        content: paper.abstract || '',
+        source: `zotero:${paper.zoteroKey || paper.id}`,
+        tags: paper.tags || [],
+        metadata: {
+          year: paper.year,
+          venue: paper.venue,
+          doi: paper.doi,
+          citations: paper.citations,
+          noteCount: paper.noteCount,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  localKG.updatedAt = now;
+  saveLocalKG(localKG);
+  // 清除合并缓存，下次重新合并
+  mergedGraph = null;
+}
+
 function getMergedGraph(): KnowledgeGraph {
   if (mergedGraph) return mergedGraph;
 
-  // 合并学术知识图谱和项目知识图谱
-  const allEntities = [
+  // 1. 合并学术知识图谱和项目知识图谱
+  const staticEntities = [
     ...academicKnowledgeGraph.entities,
     ...projectKnowledgeGraph.entities,
   ];
-  const allRelations = [
+  const staticRelations = [
     ...academicKnowledgeGraph.relations,
     ...projectKnowledgeGraph.relations,
+  ];
+
+  // 2. 加载本地动态知识图谱（用户导入的Zotero论文等）
+  const localKG = getLocalKG();
+
+  // 3. 合并所有实体和关系
+  const allEntities = [
+    ...staticEntities,
+    ...localKG.entities,
+  ];
+  const allRelations = [
+    ...staticRelations,
+    ...localKG.relations,
   ];
 
   mergedGraph = {
