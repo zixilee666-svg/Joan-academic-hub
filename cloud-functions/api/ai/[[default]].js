@@ -386,7 +386,7 @@ async function handleAiChat(request) {
     // 流式调用 AI API，直接透传 SSE 流到前端
     const res = await callOpenAICompatibleApi(
       baseUrl, apiKey, model, messages,
-      { stream: true, temperature: 0.7, maxTokens: 2048, timeout: 25000 }
+      { stream: true, temperature: 0.7, maxTokens: 8192, timeout: 55000 }
     );
 
     console.log('[CF-AiChat] AI API response status:', res.status);
