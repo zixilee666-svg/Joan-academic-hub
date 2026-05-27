@@ -64,6 +64,8 @@ export default function AIChatPage() {
   const [loadingConv, setLoadingConv] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // 自动续写计数器（最多自动续写 2 次，避免无限循环）
+  const autoContinueCount = useRef(0);
   // 持久化 ref：跟踪最新 state 用于 save 时读取
   const messagesRef = useRef<AIMessage[]>([]);
   const conversationsRef = useRef<AIConversation[]>([]);
@@ -151,6 +153,9 @@ export default function AIChatPage() {
   const sendMessage = async (text?: string) => {
     const textToSend = (text || input).trim();
     if (!textToSend || isLoading) return;
+
+    // 新用户消息发出时，重置自动续写计数器
+    autoContinueCount.current = 0;
 
     const settings = useSettingsStore.getState();
     const defaultModel = settings.aiModels.find(m => m.id === settings.defaultAiModelId);
@@ -251,31 +256,20 @@ export default function AIChatPage() {
           console.error('[AIChat] SSE stream error:', streamError);
         }
 
-        // 流式完成后：检测是否被截断
+        // 流式完成后：检测是否被截断，决定是否自动续写
         const isTruncated = !streamEnded && !streamError;
-        const finalContent = aiContent
-          ? (isTruncated ? aiContent + '\n\n_⚠️ 回答可能不完整，请刷新后重试_' : aiContent)
-          : (streamError ? '⚠️ 连接异常：' + streamError : '贞德正在思考中...');
-
-        const aiMsg: AIMessage = {
-          id: aiMsgId,
-          role: 'assistant',
-          content: finalContent,
-          timestamp: new Date().toISOString(),
-        };
-        if (convId) {
-          setConversations(prev => prev.map(c => {
-            if (c.id !== convId) return c;
-            return {
-              ...c,
-              messages: [...c.messages, userMsg, aiMsg],
-              title: c.title === '新的学术对话'
-                ? textToSend.slice(0, 30) + (textToSend.length > 30 ? '...' : '')
-                : c.title,
-              updatedAt: new Date().toISOString(),
-            };
-          }));
-          persistCurrentConv(convId);
+        if (isTruncated && autoContinueCount.current < 2) {
+          // 自动续写：不创建新消息，直接追加内容到当前 AI 消息
+          autoContinueCount.current++;
+          console.log('[AIChat] Truncated, auto-continuing (' + autoContinueCount.current + '/2)');
+          // 调用续写：用 "请继续" 作为消息，但不显示在 UI
+          await triggerAutoContinue(convId, aiMsgId, aiContent);
+        } else {
+          // 不续写：最终确定 AI 消息内容
+          const finalContent = aiContent
+            ? (isTruncated ? aiContent + '\n\n_⚠️ 回答可能不完整，已自动停止续写_' : aiContent)
+            : (streamError ? '⚠️ 连接异常：' + streamError : '贞德正在思考中...');
+          finalizeAiMessage(convId, aiMsgId, finalContent, userMsg);
         }
       } else {
         // JSON response (mock mode or fallback)
@@ -322,6 +316,92 @@ export default function AIChatPage() {
       toast.error('AI 对话请求失败');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 自动续写：被截断后自动发送"请继续"并追加到同一 AI 消息
+  const triggerAutoContinue = async (convId: string, aiMsgId: string, currentContent: string) => {
+    try {
+      const settings = useSettingsStore.getState();
+      const defaultModel = settings.aiModels.find(m => m.id === settings.defaultAiModelId);
+      if (!defaultModel || !defaultModel.apiKey) return;
+
+      const response = await api.aiChat(convId, '请继续', undefined, defaultModel);
+      const contentType = response.headers.get('Content-Type') || '';
+      if (!contentType.includes('text/event-stream') || !response.body || typeof response.body.getReader !== 'function') {
+        // 非 SSE 响应，无法续写
+        finalizeAiMessage(convId, aiMsgId, currentContent + '\n\n_⚠️ 自动续写失败，请手动点击重试_', null as any);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let continuedContent = currentContent;
+      let streamEnded2 = false;
+      let streamError2 = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === '[DONE]') { streamEnded2 = true; break; }
+              try {
+                const data = JSON.parse(jsonStr);
+                const content = data.content || data.choices?.[0]?.delta?.content;
+                if (content) {
+                  continuedContent += content;
+                  setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: continuedContent } : m));
+                }
+              } catch {}
+            }
+          }
+          if (streamEnded2) break;
+        }
+      } catch (e: any) {
+        streamError2 = e.message || '续写流异常';
+      }
+
+      // 续写后再次检查是否需要继续
+      if (!streamEnded2 && streamError2 && autoContinueCount.current < 2) {
+        autoContinueCount.current++;
+        await triggerAutoContinue(convId, aiMsgId, continuedContent);
+      } else {
+        const final = streamError2 ? continuedContent + '\n\n_⚠️ 续写异常：' + streamError2 + '_' : continuedContent;
+        // 更新对话（无 userMsg，因为续写不新增用户消息）
+        setConversations(prev => prev.map(c => {
+          if (c.id !== convId) return c;
+          const existingMsg = (c.messages || []).find(m => m.id === aiMsgId);
+          if (existingMsg) {
+            return { ...c, messages: c.messages.map(m => m.id === aiMsgId ? { ...m, content: final } : m), updatedAt: new Date().toISOString() };
+          }
+          return { ...c, messages: [...(c.messages || []), { id: aiMsgId, role: 'assistant', content: final, timestamp: new Date().toISOString() }], updatedAt: new Date().toISOString() };
+        }));
+        persistCurrentConv(convId);
+      }
+    } catch (e) {
+      console.error('[AIChat] Auto-continue error:', e);
+    }
+  };
+
+  // 最终确定 AI 消息内容并保存
+  const finalizeAiMessage = (convId: string, aiMsgId: string, finalContent: string, userMsg: AIMessage) => {
+    const aiMsg: AIMessage = { id: aiMsgId, role: 'assistant', content: finalContent, timestamp: new Date().toISOString() };
+    if (convId) {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== convId) return c;
+        return {
+          ...c,
+          messages: [...(c.messages || []), userMsg, aiMsg],
+          title: c.title === '新的学术对话' ? userMsg.content.slice(0, 30) + (userMsg.content.length > 30 ? '...' : '') : c.title,
+          updatedAt: new Date().toISOString(),
+        };
+      }));
+      persistCurrentConv(convId);
     }
   };
 

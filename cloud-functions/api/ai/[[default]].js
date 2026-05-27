@@ -368,10 +368,17 @@ async function handleAiChat(request) {
 
     console.log('[CF-AiChat] model:', model, 'baseUrl:', baseUrl.replace(/https?:\/\/[^/]+/, '***'), 'conversationId:', conversationId);
 
-    // 将前端的 message + context 转换为 OpenAI messages 格式
-    const messages = [];
+    // 构造 messages：始终前置系统提示词（简洁分点回答）
+    const systemPrompt = `You are a helpful academic research assistant. When answering:
+1. Be concise and direct. Avoid long introductory phrases.
+2. Use bullet points (•) for structured answers. Keep each point under 2 sentences.
+3. Do NOT use markdown formatting (no **bold**, no ## headers). Use plain text only.
+4. If the question requires a long answer, summarize key points first, then elaborate briefly.
+Always reply in the same language as the user's question.`;
+    const messages = [{ role: 'system', content: systemPrompt }];
     if (context) {
-      messages.push({ role: 'system', content: context });
+      // context 是前端传入的附加上下文（如论文内容），追加到系统提示词之后
+      messages.push({ role: 'system', content: 'Additional context: ' + context });
     }
     if (message) {
       messages.push({ role: 'user', content: message });
