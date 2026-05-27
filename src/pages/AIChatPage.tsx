@@ -366,8 +366,8 @@ export default function AIChatPage() {
         streamError2 = e.message || '续写流异常';
       }
 
-      // 续写后再次检查是否需要继续
-      if (!streamEnded2 && streamError2 && autoContinueCount.current < 2) {
+      // 续写后再次检查是否需要继续（没有收到 [DONE] 且没有异常 = 截断）
+      if (!streamEnded2 && !streamError2 && autoContinueCount.current < 2) {
         autoContinueCount.current++;
         await triggerAutoContinue(convId, aiMsgId, continuedContent);
       } else {
