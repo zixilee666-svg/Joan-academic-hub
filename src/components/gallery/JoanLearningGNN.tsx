@@ -1,603 +1,818 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import ArcherJeanneSvg from './ArcherJeanneSvg';
+import BerserkerJeanneAlterSvg from './BerserkerJeanneAlterSvg';
+import AlterSantaLilySvg from './AlterSantaLilySvg';
+import YoungJeanneSantaSvg from './YoungJeanneSantaSvg';
 
 /**
- * FGO Q版贞德(Ruler) 躺卧学习GNN 动态场景组件
- * 7:3 横版比例 | 知识标签环绕 | 呼吸动画 | 粒子光效 | SVG连接线
+ * 学术贞德画廊 - 《创造亚当》式GNN学习动态场景
+ * 零依赖 | 背景透明 | SVG+CSS动画 | 响应式
+ *
+ * 场景布局：
+ *  左侧 - Ruler白贞德（亚当位置，半躺斜卧）
+ *  右侧 - Avenger黑贞（上帝位置，悬浮，暗色能量光环）
+ *  两指之间 - GNN节点图（知识之火）
+ *  环绕 - 4个辅助贞德形象（简化版）
+ *  背景 - GNN知识节点系统（四类节点+连线+流动光点）
  */
 
-// ── GNN知识图谱数据 ──
-const KNOWLEDGE_DATA = {
+// ════════════════════════════════════════════════════════════╗
+//  GNN知识图谱数据
+// ════════════════════════════════════════════════════════════╝
+
+const GNN_CATEGORIES = {
   gnn: {
     name: 'GNN模型',
-    color: '#3b82f6',
-    bg: 'rgba(59,130,246,0.15)',
-    items: ['GCN', 'GAT', 'GraphSAGE', 'GIN', 'R-GCN', 'GAE'],
-  },
-  dataset: {
-    name: '数据集',
-    color: '#10b981',
-    bg: 'rgba(16,185,129,0.15)',
-    items: ['Cora', 'Citeseer', 'PubMed', 'ogbn-arxiv', 'PPI', 'Reddit'],
+    shape: 'hexagon' as const,
+    color: '#F4D03F',
+    bg: 'rgba(244,208,63,0.18)',
+    border: '#F4D03F',
+    items: [
+      { label: 'GCN', sub: 'Graph Convolutional', link: '/knowledge-graph/gnn-types/gcn' },
+      { label: 'GAT', sub: 'Graph Attention', link: '/knowledge-graph/gnn-types/gat' },
+      { label: 'GraphSAGE', sub: 'Sample & Aggregate', link: '/knowledge-graph/gnn-types/graphsage' },
+      { label: 'GIN', sub: 'Graph Isomorphism', link: '/knowledge-graph/gnn-types/gin' },
+      { label: 'GAE/VGAE', sub: 'Graph Auto-Encoder', link: '/knowledge-graph/gnn-types/gae-vgae' },
+      { label: 'DiffPool', sub: 'Hierarchical Pool', link: '/knowledge-graph/gnn-types/diffpool' },
+    ],
   },
   loss: {
     name: '损失函数',
-    color: '#f97316',
-    bg: 'rgba(249,115,22,0.15)',
-    items: ['CrossEntropy', 'NLLLoss', 'Contrastive', 'InfoNCE'],
+    shape: 'circle' as const,
+    color: '#3498DB',
+    bg: 'rgba(52,152,219,0.18)',
+    border: '#3498DB',
+    items: [
+      { label: 'CrossEntropy', sub: '交叉熵损失', link: '/knowledge-graph/loss-functions/cross-entropy' },
+      { label: 'Reconstruction', sub: '重构损失', link: '/knowledge-graph/loss-functions/reconstruction' },
+      { label: 'KL Divergence', sub: 'KL散度', link: '/knowledge-graph/loss-functions/kl-divergence' },
+      { label: 'Contrastive', sub: '对比损失', link: '/knowledge-graph/loss-functions/contrastive' },
+      { label: 'Triplet Margin', sub: '三元组损失', link: '/knowledge-graph/loss-functions/triplet' },
+    ],
+  },
+  dataset: {
+    name: '数据集',
+    shape: 'square' as const,
+    color: '#2ECC71',
+    bg: 'rgba(46,204,113,0.18)',
+    border: '#2ECC71',
+    items: [
+      { label: 'Cora', sub: '2,708 nodes / 7 cls', link: '/knowledge-graph/datasets/cora' },
+      { label: 'CiteSeer', sub: '3,327 nodes / 6 cls', link: '/knowledge-graph/datasets/citeseer' },
+      { label: 'PubMed', sub: '19,717 nodes / 3 cls', link: '/knowledge-graph/datasets/pubmed' },
+      { label: 'Reddit', sub: '大型规模', link: '/knowledge-graph/datasets/reddit' },
+      { label: 'ogbn-arxiv', sub: '169K nodes', link: '/knowledge-graph/datasets/ogbn-arxiv' },
+    ],
   },
   basic: {
     name: '基础知识',
-    color: '#8b5cf6',
-    bg: 'rgba(139,92,246,0.15)',
-    items: ['Message Passing', 'Node Embedding', 'Graph Convolution', 'Attention', 'Aggregation'],
+    shape: 'diamond' as const,
+    color: '#9B59B6',
+    bg: 'rgba(155,89,182,0.18)',
+    border: '#9B59B6',
+    items: [
+      { label: 'Message Passing', sub: '消息传递', link: '/knowledge-graph/basics/message-passing' },
+      { label: 'Aggregation', sub: '聚合函数', link: '/knowledge-graph/basics/aggregation' },
+      { label: 'Node Embedding', sub: '节点嵌入', link: '/knowledge-graph/basics/node-embedding' },
+      { label: 'Spectral Domain', sub: '谱域', link: '/knowledge-graph/basics/spectral-domain' },
+      { label: 'Spatial Domain', sub: '空域', link: '/knowledge-graph/basics/spatial-domain' },
+      { label: 'Attention Mech', sub: '注意力机制', link: '/knowledge-graph/basics/attention-mechanism' },
+      { label: 'Graph Fourier', sub: '图傅里叶', link: '/knowledge-graph/basics/graph-fourier' },
+      { label: 'Over-smoothing', sub: '过平滑', link: '/knowledge-graph/basics/over-smoothing' },
+    ],
   },
 };
 
-// 标签位置配置（相对于场景容器的百分比）
-const TAG_POSITIONS: Record<string, { top: string; left: string }[]> = {
-  gnn: [
-    { top: '6%', left: '4%' },
-    { top: '2%', left: '22%' },
-    { top: '0%', left: '42%' },
-    { top: '3%', left: '60%' },
-    { top: '8%', left: '76%' },
-    { top: '14%', left: '88%' },
-  ],
-  dataset: [
-    { top: '78%', left: '2%' },
-    { top: '86%', left: '14%' },
-    { top: '90%', left: '32%' },
-    { top: '88%', left: '52%' },
-    { top: '82%', left: '70%' },
-    { top: '76%', left: '86%' },
-  ],
-  loss: [
-    { top: '32%', left: '1%' },
-    { top: '52%', left: '3%' },
-    { top: '68%', left: '8%' },
-    { top: '44%', left: '90%' },
-  ],
-  basic: [
-    { top: '22%', left: '12%' },
-    { top: '72%', left: '20%' },
-    { top: '28%', left: '80%' },
-    { top: '62%', left: '82%' },
-    { top: '48%', left: '48%' },
-  ],
-};
+type CategoryKey = keyof typeof GNN_CATEGORIES;
 
-// 标签动画参数
-const TAG_ANIMS = [
-  { dur: '3.5s', delay: '0s' },
-  { dur: '4.0s', delay: '0.3s' },
-  { dur: '3.8s', delay: '0.6s' },
-  { dur: '4.2s', delay: '0.9s' },
-  { dur: '3.6s', delay: '1.2s' },
-  { dur: '4.0s', delay: '1.5s' },
-];
+// ════════════════════════════════════════════════════════════╗
+//  SVG绘制辅助：六边形路径
+// ════════════════════════════════════════════════════════════╝
 
-// ── 粒子组件 ──
-function Particles() {
-  const particles = Array.from({ length: 18 }, (_, i) => ({
-    id: i,
-    top: `${8 + Math.random() * 84}%`,
-    size: 2 + Math.random() * 3,
-    duration: 6 + Math.random() * 8,
-    delay: Math.random() * 10,
-    color: ['#64b4ff', '#ffb4dc', '#ffe066', '#7dd3c0', '#c8a8ff'][Math.floor(Math.random() * 5)],
-  }));
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
-      {particles.map((p) => (
-        <div
-          key={p.id}
-          className="particle-drift"
-          style={{
-            position: 'absolute',
-            left: '-10px',
-            top: p.top,
-            width: p.size,
-            height: p.size,
-            borderRadius: '50%',
-            backgroundColor: p.color,
-            boxShadow: `0 0 ${p.size * 3}px ${p.color}`,
-            animationDuration: `${p.duration}s`,
-            animationDelay: `${p.delay}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
+function hexPath(cx: number, cy: number, r: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i - Math.PI / 6;
+    pts.push(`${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)}`);
+  }
+  return `M${pts.join('L')}Z`;
 }
 
-// ── 知识标签组件 ──
-function KnowledgeTag({
-  text,
-  color,
-  bg,
-  top,
-  left,
-  dur,
-  delay,
-  idx,
-}: {
-  text: string;
+function diamondPath(cx: number, cy: number, rx: number, ry: number): string {
+  return `M${cx},${cy - ry}L${cx + rx},${cy}L${cx},${cy + ry}L${cx - rx},${cy}Z`;
+}
+
+// ════════════════════════════════════════════════════════════╗
+//  粒子系统（Canvas 2D）
+// ════════════════════════════════════════════════════════════╝
+
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  life: number;
+  maxLife: number;
   color: string;
-  bg: string;
-  top: string;
-  left: string;
-  dur: string;
-  delay: string;
-  idx: number;
-}) {
-  return (
-    <div
-      className="knowledge-tag"
-      style={{
-        position: 'absolute',
-        top,
-        left,
-        padding: '4px 12px',
-        borderRadius: '16px',
-        fontSize: '11px',
-        fontWeight: 600,
-        color,
-        background: bg,
-        border: `1px solid ${color}30`,
-        backdropFilter: 'blur(4px)',
-        cursor: 'pointer',
-        zIndex: 30,
-        whiteSpace: 'nowrap',
-        animationDuration: dur,
-        animationDelay: delay,
-        animationName: 'tagFloat',
-        animationIterationCount: 'infinite',
-        animationTimingFunction: 'linear',
-      }}
-      data-idx={idx}
-    >
-      {text}
-    </div>
-  );
 }
 
-// ── SVG连接线层 ──
-function ConnectionLines({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
-  const [lines, setLines] = useState<string>('');
+function ParticlesCanvas({ side }: { side: 'white' | 'black' }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const particlesRef = useRef<Particle[]>([]);
+  const animRef = useRef<number>(0);
 
   useEffect(() => {
-    const draw = () => {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-      const tags = container.querySelectorAll<HTMLElement>('.knowledge-tag');
-      const centers: { x: number; y: number; cat: string }[] = [];
+    const resize = () => {
+      const parent = canvas.parentElement;
+      if (parent) {
+        canvas.width = parent.clientWidth;
+        canvas.height = parent.clientHeight;
+      }
+    };
+    resize();
+    window.addEventListener('resize', resize);
 
-      tags.forEach((tag) => {
-        const r = tag.getBoundingClientRect();
-        const cat = Object.entries(KNOWLEDGE_DATA).find(([_, data]) =>
-          data.items.includes(tag.textContent?.trim() || '')
-        )?.[0] || '';
-        centers.push({
-          x: r.left - rect.left + r.width / 2,
-          y: r.top - rect.top + r.height / 2,
-          cat,
-        });
+    // 初始化粒子
+    const count = 30;
+    const particles: Particle[] = [];
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: side === 'white' ? 0.2 + Math.random() * 0.5 : -(0.2 + Math.random() * 0.5),
+        vy: side === 'white' ? -0.3 - Math.random() * 0.4 : 0.2 + Math.random() * 0.3,
+        size: 1.5 + Math.random() * 2.5,
+        life: Math.random() * 200,
+        maxLife: 150 + Math.random() * 100,
+        color: side === 'white'
+          ? `hsl(${40 + Math.random() * 20}, 100%, ${70 + Math.random() * 20}%)`
+          : `hsl(${350 + Math.random() * 20}, 80%, ${40 + Math.random() * 20}%)`,
       });
+    }
+    particlesRef.current = particles;
 
-      const catColors: Record<string, string> = {
-        gnn: '#3b82f6',
-        dataset: '#10b981',
-        loss: '#f97316',
-        basic: '#8b5cf6',
-      };
-
-      let paths = '';
-      Object.keys(KNOWLEDGE_DATA).forEach((cat) => {
-        const catCenters = centers.filter((c) => c.cat === cat);
-        for (let i = 0; i < catCenters.length - 1; i++) {
-          const c1 = catCenters[i];
-          const c2 = catCenters[i + 1];
-          paths += `<line x1="${c1.x}" y1="${c1.y}" x2="${c2.x}" y2="${c2.y}" stroke="${catColors[cat]}" stroke-width="1" opacity="0.25" stroke-dasharray="3,3"/>`;
+    const loop = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const ps = particlesRef.current;
+      for (const p of ps) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life++;
+        if (p.life > p.maxLife || p.x < -10 || p.x > canvas.width + 10 || p.y < -10 || p.y > canvas.height + 10) {
+          p.x = side === 'white' ? Math.random() * canvas.width * 0.3 : canvas.width * 0.7 + Math.random() * canvas.width * 0.3;
+          p.y = Math.random() * canvas.height;
+          p.life = 0;
         }
-      });
-
-      setLines(paths);
+        const alpha = Math.max(0, 1 - p.life / p.maxLife) * 0.6;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha;
+        ctx.fill();
+        // 光晕
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = alpha * 0.2;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      animRef.current = requestAnimationFrame(loop);
     };
+    loop();
 
-    const timer = setTimeout(draw, 600);
-    window.addEventListener('resize', draw);
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', draw);
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener('resize', resize);
     };
-  }, [containerRef]);
+  }, [side]);
 
   return (
-    <svg
-      className="absolute inset-0 w-full h-full pointer-events-none z-25"
-      style={{ zIndex: 25 }}
-      dangerouslySetInnerHTML={{ __html: lines }}
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ zIndex: 15 }}
     />
   );
 }
 
-// ── Q版贞德 SVG ──
-function ChibiJeanne() {
+// ════════════════════════════════════════════════════════════╗
+//  GNN知识节点（SVG）
+// ════════════════════════════════════════════════════════════╝
+
+function GnnNodeSvg({ catKey, idx, total, orbitRx, orbitRy, phase }: {
+  catKey: CategoryKey;
+  idx: number;
+  total: number;
+  orbitRx: number;
+  orbitRy: number;
+  phase: number;
+}) {
+  const cat = GNN_CATEGORIES[catKey];
+  const item = cat.items[idx];
+  const angle = (idx / total) * Math.PI * 2 + phase;
+  const baseCx = 500 + orbitRx * Math.cos(angle);
+  const baseCy = 250 + orbitRy * Math.sin(angle);
+  const nodeSize = catKey === 'dataset' ? 22 : 18;
+
+  const shapeSvg = () => {
+    const s = nodeSize;
+    switch (cat.shape) {
+      case 'hexagon':
+        return <path d={hexPath(baseCx, baseCy, s)} fill={cat.bg} stroke={cat.border} strokeWidth="1.5" opacity="0.85" />;
+      case 'circle':
+        return <circle cx={baseCx} cy={baseCy} r={s} fill={cat.bg} stroke={cat.border} strokeWidth="1.5" opacity="0.85" />;
+      case 'square':
+        return <rect x={baseCx - s} y={baseCy - s} width={s * 2} height={s * 2} rx="3" fill={cat.bg} stroke={cat.border} strokeWidth="1.5" opacity="0.85" />;
+      case 'diamond':
+        return <path d={diamondPath(baseCx, baseCy, s, s * 0.7)} fill={cat.bg} stroke={cat.border} strokeWidth="1.5" opacity="0.85" />;
+    }
+  };
+
   return (
-    <svg
-      viewBox="0 0 520 240"
-      className="w-full h-full"
-      preserveAspectRatio="xMidYMax meet"
-      xmlns="http://www.w3.org/2000/svg"
-    >
+    <g className="gnn-node-group" style={{ cursor: 'pointer' }}>
+      {/* 外发光 */}
+      <circle cx={baseCx} cy={baseCy} r={nodeSize + 8} fill={cat.color} opacity="0.08">
+        <animate attributeName="r" values={`${nodeSize + 4};${nodeSize + 12};${nodeSize + 4}`} dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.08;0.15;0.08" dur="2s" repeatCount="indefinite" />
+      </circle>
+      {/* 形状 */}
+      {shapeSvg()}
+      {/* 标签 */}
+      <text x={baseCx} y={baseCy + 4} textAnchor="middle" fontSize="8" fontWeight="700" fill={cat.border} pointerEvents="none">
+        {item.label}
+      </text>
+      <title>{`${item.label} - ${item.sub}\n点击查看知识图谱`}</title>
+    </g>
+  );
+}
+
+// ════════════════════════════════════════════════════════════╗
+//  Ruler白贞德 SVG（亚当位置 - 左侧半躺）
+// ════════════════════════════════════════════════════════════╝
+
+function RulerJeanneSvg() {
+  return (
+    <svg viewBox="0 0 400 350" className="w-full h-full" xmlns="http://www.w3.org/2000/svg" style={{ overflow: 'visible' }}>
       <defs>
-        {/* 头发渐变 */}
-        <linearGradient id="hairG" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#F7DC6F" />
+        <linearGradient id="rHair" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFD700" />
           <stop offset="50%" stopColor="#F4D03F" />
           <stop offset="100%" stopColor="#D4AC0D" />
         </linearGradient>
-        {/* 皮肤 */}
-        <linearGradient id="skinG" x1="0%" y1="0%" x2="0%" y2="100%">
+        <linearGradient id="rSkin" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#FFF5E6" />
           <stop offset="100%" stopColor="#FFE4C4" />
         </linearGradient>
-        {/* 铠甲银 */}
-        <linearGradient id="armorG" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="rArmor" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#E8E8E8" />
           <stop offset="40%" stopColor="#C0C0C0" />
           <stop offset="100%" stopColor="#909090" />
         </linearGradient>
-        {/* 深蓝裙 */}
-        <linearGradient id="dressG" x1="0%" y1="0%" x2="0%" y2="100%">
+        <linearGradient id="rDress" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#4A6FA5" />
           <stop offset="100%" stopColor="#2E4A6F" />
         </linearGradient>
-        {/* 白披风 */}
-        <linearGradient id="capeG" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="rCape" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#FFFFFF" />
           <stop offset="100%" stopColor="#E8EDF2" />
         </linearGradient>
-        {/* 光晕 */}
-        <radialGradient id="holyGlow">
-          <stop offset="0%" stopColor="rgba(100,160,255,0.2)" />
-          <stop offset="50%" stopColor="rgba(160,120,255,0.1)" />
+        <linearGradient id="rFlag" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#F4D03F" />
+          <stop offset="100%" stopColor="#D4AC0D" />
+        </linearGradient>
+        <filter id="rGlow">
+          <feGaussianBlur stdDeviation="4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      {/* 底部阴影 */}
+      <ellipse cx="200" cy="335" rx="140" ry="10" fill="#000" opacity="0.06" />
+
+      {/* ===== 身体组（呼吸动画）===== */}
+      <g className="ruler-body">
+        <animateTransform attributeName="transform" type="translate" values="0,0;0,-2;0,0" dur="5s" repeatCount="indefinite" />
+
+        {/* 白披风（底层，飘动） */}
+        <path className="r-cape" d="M100 260 Q70 200 110 160 Q150 120 220 115 Q300 120 360 140 Q400 160 390 210 Q380 260 330 275 Q260 285 200 282 Q140 285 100 260Z"
+          fill="url(#rCape)" filter="url(#rGlow)" opacity="0.92">
+          <animate attributeName="d" values="M100 260 Q70 200 110 160 Q150 120 220 115 Q300 120 360 140 Q400 160 390 210 Q380 260 330 275 Q260 285 200 282 Q140 285 100 260Z;M100 260 Q65 195 105 155 Q145 115 220 110 Q305 115 365 135 Q405 155 395 215 Q385 265 330 280 Q255 290 200 287 Q135 290 100 260Z;M100 260 Q70 200 110 160 Q150 120 220 115 Q300 120 360 140 Q400 160 390 210 Q380 260 330 275 Q260 285 200 282 Q140 285 100 260Z" dur="4s" repeatCount="indefinite" />
+        </path>
+        {/* 披风十字纹章 */}
+        <path d="M190 175 L190 205 M175 190 L205 190" stroke="#C9A04D" strokeWidth="2" fill="none" opacity="0.35" />
+
+        {/* 深蓝裙子 */}
+        <path d="M130 200 Q120 240 140 270 Q180 280 240 278 Q300 276 350 265 Q370 250 360 220 Q350 200 310 195 Q260 190 210 195 Q160 198 130 200Z"
+          fill="url(#rDress)" />
+
+        {/* 银甲胸甲 */}
+        <path d="M150 175 Q170 150 220 145 Q270 150 320 175 Q330 190 320 210 Q270 200 220 197 Q170 200 150 210 Q140 190 150 175Z"
+          fill="url(#rArmor)" />
+        {/* 铠甲装饰 */}
+        <path d="M190 168 Q220 162 250 168" stroke="#A0A0A0" strokeWidth="1.5" fill="none" />
+        <path d="M180 185 Q220 180 260 185" stroke="#A0A0A0" strokeWidth="1" fill="none" opacity="0.5" />
+        {/* 腰带扣 */}
+        <circle cx="220" cy="192" r="5" fill="#C9A04D" />
+
+        {/* 左腿（伸展向前） */}
+        <path d="M155 240 Q130 245 100 248 Q80 250 75 252 Q70 255 80 258 Q120 260 165 255Z" fill="url(#rDress)" />
+        <ellipse cx="115" cy="249" rx="13" ry="7" fill="url(#rArmor)" transform="rotate(-8 115 249)" />
+        {/* 黑袜+鞋 */}
+        <path d="M82 250 Q70 252 65 255 Q62 258 68 260 Q85 261 95 258Z" fill="#1a1a2e" />
+        <ellipse cx="60" cy="256" rx="9" ry="5" fill="url(#rSkin)" transform="rotate(-12 60 256)" />
+
+        {/* 右腿（弯曲向后） */}
+        <path d="M290 240 Q330 235 360 230 Q380 228 385 230 Q390 233 380 237 Q340 242 300 248Z" fill="url(#rDress)" />
+        <ellipse cx="340" cy="233" rx="13" ry="7" fill="url(#rArmor)" transform="rotate(8 340 233)" />
+
+        {/* ===== 左臂（向前伸展 - 亚当手势）===== */}
+        <g className="r-left-arm">
+          <animateTransform attributeName="transform" type="translate" values="0,0;-3,2;0,0" dur="3s" repeatCount="indefinite" />
+          {/* 上臂 */}
+          <path d="M155 185 Q130 175 110 180 Q90 190 85 200 Q82 210 90 215 L105 210 Q100 202 110 195 Q125 188 140 190Z"
+            fill="url(#rSkin)" />
+          {/* 前臂 + 手（向前伸展） */}
+          <path d="M90 215 Q75 220 60 228 Q48 238 45 248 Q43 255 48 258 Q55 260 62 255 L70 248 Q65 242 68 238 Q75 232 85 230 Q95 228 105 225Z"
+            fill="url(#rSkin)" />
+          {/* 左手手指（向上微曲，指向黑贞） */}
+          <g transform="translate(45, 248)">
+            <path d="M0,0 Q-5,-8 -3,-15" stroke="url(#rSkin)" strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M3,-2 Q0,-10 2,-18" stroke="url(#rSkin)" strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M7,-3 Q6,-11 9,-16" stroke="url(#rSkin)" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+            {/* 指尖微光 */}
+            <circle cx="-3" cy="-15" r="2" fill="#FFD700" opacity="0.8">
+              <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="2" cy="-18" r="2" fill="#FFD700" opacity="0.8">
+              <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" begin="0.3s" />
+            </circle>
+            <circle cx="9" cy="-16" r="1.5" fill="#FFD700" opacity="0.8">
+              <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" begin="0.6s" />
+            </circle>
+          </g>
+        </g>
+
+        {/* ===== 右臂（自然放置/微举）===== */}
+        <path d="M310 185 Q330 195 325 210 Q315 218 305 212Z" fill="url(#rSkin)" />
+        <ellipse cx="328" cy="212" rx="8" ry="5" fill="url(#rSkin)" transform="rotate(15 328 212)" />
+
+        {/* 旗帜（身旁，百合花纹章） */}
+        <g transform="translate(300, 155) rotate(-15)">
+          <rect x="0" y="0" width="4" height="80" fill="#C0C0C0" />
+          <rect x="4" y="5" width="45" height="32" rx="2" fill="url(#rFlag)" />
+          {/* 百合花纹 */}
+          <path d="M26,15 Q22,12 20,15 Q18,18 22,20 Q26,22 30,20 Q34,18 32,15 Q30,12 26,15Z" fill="white" />
+          <path d="M20,24 L26,20 L32,24" stroke="white" strokeWidth="1" fill="none" />
+        </g>
+      </g>
+
+      {/* ===== 头部组 ===== */}
+      <g className="ruler-head">
+        <animateTransform attributeName="transform" type="translate" values="0,0;-1,1;0,0" dur="6s" repeatCount="indefinite" />
+
+        {/* 后发（大波浪） */}
+        <path d="M170 120 Q150 100 140 75 Q135 55 150 45 Q170 38 195 42 Q220 38 250 45 Q275 55 280 80 Q275 105 260 120Z"
+          fill="url(#rHair)" />
+
+        {/* 粗辫子（右侧，飘动） */}
+        <path className="r-braid" d="M270 75 Q295 68 315 82 Q335 98 328 120 Q322 138 305 132 Q290 125 280 110 Q272 95 270 75Z"
+          fill="url(#rHair)">
+          <animate attributeName="d" values="M270 75 Q295 68 315 82 Q335 98 328 120 Q322 138 305 132 Q290 125 280 110 Q272 95 270 75Z;M270 75 Q298 65 320 80 Q342 95 335 122 Q328 140 310 135 Q292 128 278 112 Q270 97 270 75Z;M270 75 Q295 68 315 82 Q335 98 328 120 Q322 138 305 132 Q290 125 280 110 Q272 95 270 75Z" dur="3.5s" repeatCount="indefinite" />
+        </path>
+        {/* 辫子纹理 */}
+        {[0, 1, 2].map(i => (
+          <path key={i} d={`M278 ${82 + i * 12} Q292 ${86 + i * 12} Q306 ${92 + i * 10}`} stroke="#D4AC0D" strokeWidth="1.2" fill="none" opacity="0.6" />
+        ))}
+
+        {/* 头部 */}
+        <ellipse cx="210" cy="95" rx="36" ry="32" fill="url(#rSkin)" />
+
+        {/* 刘海 */}
+        <path d="M178 78 Q190 65 210 62 Q230 65 252 78 Q248 75 230 72 Q210 68 190 72 Q178 76 178 78Z"
+          fill="url(#rHair)" />
+
+        {/* 银色额冠 */}
+        <path d="M185 72 Q210 58 235 72 Q230 66 210 62 Q190 66 185 72Z" fill="#D4D4D4" />
+        <ellipse cx="210" cy="64" rx="4" ry="5" fill="#C9A04D" />
+        {/* 冠饰纹路 */}
+        <path d="M198 67 L198 61 M220 67 L220 61" stroke="#A0A0A0" strokeWidth="1.2" />
+
+        {/* 呆毛 */}
+        <path d="M210 58 Q213 44 220 48" stroke="#F4D03F" strokeWidth="2.5" fill="none" strokeLinecap="round">
+          <animate attributeName="d" values="M210 58 Q213 44 220 48;M210 58 Q215 42 218 46;M210 58 Q213 44 220 48" dur="3s" repeatCount="indefinite" />
+        </path>
+
+        {/* 眼睛（紫罗兰色） */}
+        <g>
+          {/* 左眼 */}
+          <ellipse cx="198" cy="97" rx="7" ry="9" fill="white" />
+          <ellipse cx="198" cy="97" rx="5" ry="7" fill="#7B68EE" />
+          <circle cx="199" cy="95" r="2.5" fill="white" />
+          <path d="M190 91 Q198 87 206 91" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
+          {/* 眼神光：渴望知识的光芒 */}
+          <circle cx="197" cy="96" r="1" fill="white" opacity="0.8" />
+        </g>
+        <g>
+          {/* 右眼 */}
+          <ellipse cx="222" cy="97" rx="7" ry="9" fill="white" />
+          <ellipse cx="222" cy="97" rx="5" ry="7" fill="#7B68EE" />
+          <circle cx="223" cy="95" r="2.5" fill="white" />
+          <path d="M214 91 Q222 87 230 91" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
+          <circle cx="221" cy="96" r="1" fill="white" opacity="0.8" />
+        </g>
+
+        {/* 腮红 */}
+        <ellipse cx="186" cy="108" rx="5" ry="3" fill="#FFB6C1" opacity="0.35" />
+        <ellipse cx="234" cy="108" rx="5" ry="3" fill="#FFB6C1" opacity="0.35" />
+
+        {/* 嘴巴（樱唇微启 - 渴望知识） */}
+        <path d="M202 112 Q210 117 218 112" stroke="#D4846A" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+        {/* 微张 */}
+        <ellipse cx="210" cy="115" rx="3" ry="1.5" fill="#D4846A" opacity="0.3" />
+      </g>
+
+      {/* 圣光粒子（头部周围） */}
+      {[0, 1, 2, 3, 4].map(i => (
+        <circle key={i} r="2" fill="#FFD700" opacity="0">
+          <animate attributeName="cx" values={`${195 + i * 8};${200 + i * 8}`} dur="3s" repeatCount="indefinite" begin={`${i * 0.4}s`} />
+          <animate attributeName="cy" values={`${60 - i * 5};${55 - i * 5}`} dur="3s" repeatCount="indefinite" begin={`${i * 0.4}s`} />
+          <animate attributeName="opacity" values="0;0.7;0" dur="3s" repeatCount="indefinite" begin={`${i * 0.4}s`} />
+        </circle>
+      ))}
+    </svg>
+  );
+}
+
+// ════════════════════════════════════════════════════════════╗
+//  Avenger黑贞 SVG（上帝位置 - 右侧悬浮）
+// ════════════════════════════════════════════════════════════╝
+
+function AvengerJeanneSvg() {
+  return (
+    <svg viewBox="0 0 380 360" className="w-full h-full" xmlns="http://www.w3.org/2000/svg" style={{ overflow: 'visible' }}>
+      <defs>
+        <linearGradient id="aHair" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#F5F5F5" />
+          <stop offset="50%" stopColor="#E8E8E8" />
+          <stop offset="100%" stopColor="#D0D0D0" />
+        </linearGradient>
+        <linearGradient id="aArmor" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#1a1a2e" />
+          <stop offset="50%" stopColor="#2a1a2e" />
+          <stop offset="100%" stopColor="#0a0a1a" />
+        </linearGradient>
+        <linearGradient id="aCape" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#8B0000" />
+          <stop offset="100%" stopColor="#C0392B" />
+        </linearGradient>
+        <radialGradient id="aDarkAura" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="rgba(108,52,131,0.3)" />
           <stop offset="100%" stopColor="transparent" />
         </radialGradient>
-        {/* 平板屏幕 */}
-        <linearGradient id="screenG" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#1a1a2e" />
-          <stop offset="100%" stopColor="#16213e" />
-        </linearGradient>
-        {/* 平板发光 */}
-        <filter id="tabletGlow">
+        <filter id="aGlow">
           <feGaussianBlur stdDeviation="3" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
-        {/* 柔和阴影 */}
-        <filter id="softShadow">
-          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
-        </filter>
       </defs>
 
-      {/* 底部阴影 */}
-      <ellipse cx="260" cy="225" rx="180" ry="12" fill="#000" opacity="0.08" />
+      {/* 暗色能量光环背景 */}
+      <g className="a-aura">
+        <ellipse cx="190" cy="180" rx="180" ry="140" fill="url(#aDarkAura)">
+          <animate attributeName="rx" values="180;190;180" dur="5s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.4;0.7;0.4" dur="5s" repeatCount="indefinite" />
+        </ellipse>
+        {/* 龙焰粒子 */}
+        {[0, 1, 2, 3, 4, 5].map(i => (
+          <circle key={i} r="3" fill={`hsl(${350 + i * 10}, 80%, 50%)`} opacity="0.5">
+            <animate attributeName="cx" values={`${150 + i * 15};${160 + i * 15}`} dur="2s" repeatCount="indefinite" begin={`${i * 0.3}s`} />
+            <animate attributeName="cy" values={`${120 + i * 20};${115 + i * 20}`} dur="2s" repeatCount="indefinite" begin={`${i * 0.3}s`} />
+            <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite" begin={`${i * 0.3}s`} />
+          </circle>
+        ))}
+      </g>
 
-      {/* 光晕背景 */}
-      <ellipse cx="260" cy="120" rx="200" ry="100" fill="url(#holyGlow)">
-        <animate attributeName="opacity" values="0.6;1;0.6" dur="6s" repeatCount="indefinite" />
-        <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="6s" repeatCount="indefinite" additive="sum" />
-      </ellipse>
+      {/* ===== 身体组（悬浮呼吸）===== */}
+      <g className="avenger-body">
+        <animateTransform attributeName="transform" type="translate" values="0,0;0,-3;0,0" dur="4s" repeatCount="indefinite" />
 
-      {/* ===== 身体组（呼吸动画） ===== */}
-      <g>
-        <animateTransform
-          attributeName="transform"
-          type="translate"
-          values="0,0; 0,-1.5; 0,0"
-          dur="5s"
-          repeatCount="indefinite"
-        />
-
-        {/* 白披风（底层） */}
-        <path
-          d="M120 180 Q100 120 140 90 Q180 60 260 65 Q340 60 400 80 Q450 100 440 150 Q430 200 380 210 Q320 220 260 215 Q200 220 140 210 Q110 205 120 180Z"
-          fill="url(#capeG)"
-          filter="url(#softShadow)"
-          opacity="0.95"
-        />
-        {/* 披风上的十字纹章 */}
-        <path d="M250 100 L250 130 M235 115 L265 115" stroke="#C9A04D" strokeWidth="2.5" fill="none" opacity="0.4" />
-
-        {/* 深蓝裙子 */}
-        <path
-          d="M160 140 Q150 180 170 200 Q220 210 280 208 Q340 206 380 195 Q400 180 390 150 Q380 130 340 125 Q280 120 220 125 Q170 130 160 140Z"
-          fill="url(#dressG)"
-        />
-
-        {/* 银甲胸甲 */}
-        <path
-          d="M180 125 Q200 105 260 100 Q320 105 360 125 Q370 140 360 155 Q320 145 260 142 Q200 145 170 155 Q160 140 180 125Z"
-          fill="url(#armorG)"
-          filter="url(#softShadow)"
-        />
-        {/* 铠甲装饰线 */}
-        <path d="M220 118 Q260 112 300 118" stroke="#A0A0A0" strokeWidth="1.5" fill="none" />
-        <path d="M210 135 Q260 130 310 135" stroke="#A0A0A0" strokeWidth="1" fill="none" opacity="0.6" />
-
-        {/* 腰带 */}
-        <path d="M175 150 Q260 142 375 150" stroke="#2E4A6F" strokeWidth="4" fill="none" />
-        <circle cx="260" cy="146" r="5" fill="#C9A04D" />
-
-        {/* 左腿（伸展） */}
-        <path d="M170 185 Q140 190 100 192 Q80 193 75 195 Q70 198 80 200 Q120 202 180 198Z" fill="url(#dressG)" />
-        {/* 左膝甲 */}
-        <ellipse cx="130" cy="193" rx="14" ry="8" fill="url(#armorG)" transform="rotate(-5 130 193)" />
-        {/* 左黑袜 */}
-        <path d="M85 193 Q70 195 65 198 Q62 202 68 204 Q85 205 95 202Z" fill="#1a1a2e" />
-        {/* 左脚 */}
-        <ellipse cx="62" cy="200" rx="10" ry="6" fill="url(#skinG)" transform="rotate(-10 62 200)" />
-
-        {/* 右腿（弯曲） */}
-        <path d="M340 185 Q380 180 410 175 Q430 172 435 175 Q440 178 430 182 Q390 188 350 192Z" fill="url(#dressG)" />
-        {/* 右膝甲 */}
-        <ellipse cx="390" cy="178" rx="14" ry="8" fill="url(#armorG)" transform="rotate(5 390 178)" />
-        {/* 右黑袜 */}
-        <path d="M425 175 Q440 173 445 176 Q448 180 442 182 Q428 183 420 180Z" fill="#1a1a2e" />
-        {/* 右脚 */}
-        <ellipse cx="448" cy="178" rx="10" ry="6" fill="url(#skinG)" transform="rotate(10 448 178)" />
-
-        {/* ===== 头部 ===== */}
-        {/* 后发（大波浪） */}
-        <path
-          d="M220 95 Q200 80 190 60 Q185 40 200 35 Q220 30 240 40 Q260 30 280 35 Q300 40 295 60 Q290 80 270 95Z"
-          fill="url(#hairG)"
-        />
-        {/* 粗辫子（右侧） */}
-        <path
-          d="M285 55 Q310 50 325 65 Q340 80 335 100 Q330 115 310 110 Q300 105 295 90 Q290 75 285 55Z"
-          fill="url(#hairG)"
-        />
-        {/* 辫子纹理 */}
-        <path d="M295 65 Q310 70 320 80" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
-        <path d="M298 78 Q312 82 322 92" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
-        <path d="M300 92 Q310 95 318 102" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
-
-        {/* 头部轮廓 */}
-        <ellipse cx="245" cy="72" rx="38" ry="34" fill="url(#skinG)" />
-
-        {/* 刘海 */}
-        <path
-          d="M210 50 Q220 38 245 36 Q270 38 280 50 Q275 48 265 46 Q245 42 225 46 Q215 48 210 50Z"
-          fill="url(#hairG)"
-        />
-
-        {/* 银色额冠 */}
-        <path
-          d="M215 48 Q245 35 275 48 Q270 42 245 38 Q220 42 215 48Z"
-          fill="#D4D4D4"
-        />
-        <ellipse cx="245" cy="41" rx="4" ry="5" fill="#C9A04D" />
-        <path d="M232 44 L232 38 M258 44 L258 38" stroke="#A0A0A0" strokeWidth="1.5" />
-
-        {/* 呆毛 */}
-        <path d="M245 36 Q248 22 255 26" stroke="#F4D03F" strokeWidth="2.5" fill="none" strokeLinecap="round">
-          <animate attributeName="d" values="M245 36 Q248 22 255 26;M245 36 Q250 20 257 24;M245 36 Q248 22 255 26" dur="3s" repeatCount="indefinite" />
+        {/* 暗红披风（火焰飘动） */}
+        <path className="a-cape" d="M80 200 Q50 150 90 110 Q130 70 190 65 Q250 70 310 100 Q360 140 340 190 Q320 230 270 250 Q210 260 160 250 Q110 240 80 200Z"
+          fill="url(#aCape)" filter="url(#aGlow)" opacity="0.9">
+          <animate attributeName="d" values="M80 200 Q50 150 90 110 Q130 70 190 65 Q250 70 310 100 Q360 140 340 190 Q320 230 270 250 Q210 260 160 250 Q110 240 80 200Z;M80 200 Q45 145 85 105 Q125 65 190 60 Q255 65 315 95 Q365 135 345 195 Q325 235 270 255 Q205 265 155 255 Q105 245 80 200Z;M80 200 Q50 150 90 110 Q130 70 190 65 Q250 70 310 100 Q360 140 340 190 Q320 230 270 250 Q210 260 160 250 Q110 240 80 200Z" dur="3.5s" repeatCount="indefinite" />
         </path>
 
-        {/* 眼睛（紫罗兰色） */}
-        {/* 左眼 */}
-        <g>
-          <ellipse cx="232" cy="74" rx="8" ry="10" fill="white" />
-          <ellipse cx="232" cy="74" rx="6" ry="8" fill="#7B68EE" />
-          <circle cx="233" cy="72" r="3" fill="white" />
-          <path d="M223 68 Q232 64 241 68" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
+        {/* 黑色龙鳞铠甲 */}
+        <path d="M120 170 Q140 140 190 135 Q240 140 290 170 Q300 185 290 205 Q240 195 190 192 Q140 195 120 205 Q110 185 120 170Z"
+          fill="url(#aArmor)" />
+        {/* 龙鳞纹理 */}
+        {[0, 1, 2].map(i => (
+          <path key={i} d={`M${155 + i * 35} ${158 + i * 5} Q${170 + i * 35} ${152 + i * 5} ${185 + i * 35} ${158 + i * 5}`} stroke="#6C3483" strokeWidth="1" fill="none" opacity="0.4" />
+        ))}
+
+        {/* 右臂（伸展，食指指向白贞德 - 上帝手势） */}
+        <g className="a-right-arm">
+          <animateTransform attributeName="transform" type="translate" values="0,0;2,-1;0,0" dur="3s" repeatCount="indefinite" />
+          {/* 上臂 */}
+          <path d="M280 180 Q310 170 330 178 Q345 188 340 200 Q335 210 320 212Z" fill="url(#aArmor)" />
+          {/* 前臂 + 手 */}
+          <path d="M320 212 Q340 218 355 225 Q365 232 362 242 Q358 250 348 248 L338 240 Q342 232 338 228 Q330 222 320 225Z" fill="url(#aHair)" />
+          {/* 右手食指（直指白贞德，能量丝线起点） */}
+          <g transform="translate(362, 242)">
+            <path d="M0,0 L8,-12" stroke="url(#aHair)" strokeWidth="3" fill="none" strokeLinecap="round" />
+            {/* 指尖暗红+金能量丝线 */}
+            <path d="M8,-12 L12,-16" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.8">
+              <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1s" repeatCount="indefinite" />
+            </path>
+            <path d="M8,-12 L14,-14" stroke="#FFD700" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.6">
+              <animate attributeName="opacity" values="0.6;0.1;0.6" dur="1.2s" repeatCount="indefinite" />
+            </path>
+          </g>
         </g>
-        {/* 右眼 */}
-        <g>
-          <ellipse cx="258" cy="74" rx="8" ry="10" fill="white" />
-          <ellipse cx="258" cy="74" rx="6" ry="8" fill="#7B68EE" />
-          <circle cx="259" cy="72" r="3" fill="white" />
-          <path d="M249 68 Q258 64 267 68" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
-        </g>
 
-        {/* 腮红 */}
-        <ellipse cx="220" cy="86" rx="5" ry="3" fill="#FFB6C1" opacity="0.4" />
-        <ellipse cx="270" cy="86" rx="5" ry="3" fill="#FFB6C1" opacity="0.4" />
+        {/* 左臂（自然放置） */}
+        <path d="M130 180 Q110 190 115 205 Q120 215 135 210Z" fill="url(#aArmor)" />
 
-        {/* 嘴巴（微笑） */}
-        <path d="M240 90 Q245 94 250 90" stroke="#D4846A" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-
-        {/* ===== 手臂 ===== */}
-        {/* 右臂（自然放腹部） */}
-        <path d="M320 135 Q340 150 330 165 Q310 170 300 158Z" fill="url(#skinG)" />
-        {/* 右手 */}
-        <ellipse cx="328" cy="162" rx="8" ry="6" fill="url(#skinG)" transform="rotate(20 328 162)" />
-
-        {/* 左臂（举平板） */}
-        <path d="M175 130 Q150 115 140 100 Q135 90 145 88 Q155 86 165 95 Q180 108 190 125Z" fill="url(#skinG)" />
-        {/* 左手 */}
-        <ellipse cx="142" cy="90" rx="8" ry="6" fill="url(#skinG)" transform="rotate(-30 142 90)" />
-
-        {/* ===== 发光平板 ===== */}
-        <g transform="translate(85, 58) rotate(-8)">
-          {/* 平板边框 */}
-          <rect x="0" y="0" width="58" height="42" rx="4" fill="#2a2a3a" filter="url(#tabletGlow)" />
-          {/* 屏幕 */}
-          <rect x="3" y="3" width="52" height="36" rx="2" fill="url(#screenG)" />
-          {/* 屏幕上的神经网络节点 */}
-          <circle cx="15" cy="12" r="4" fill="#FF6B6B" opacity="0.9">
-            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" />
-          </circle>
-          <circle cx="35" cy="10" r="4" fill="#4ECDC4" opacity="0.9">
-            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="0.5s" />
-          </circle>
-          <circle cx="25" cy="25" r="4" fill="#45B7D1" opacity="0.9">
-            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="1s" />
-          </circle>
-          <circle cx="42" cy="28" r="3" fill="#96CEB4" opacity="0.9">
-            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="1.5s" />
-          </circle>
-          {/* 连接线 */}
-          <line x1="15" y1="12" x2="35" y2="10" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
-          <line x1="15" y1="12" x2="25" y2="25" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
-          <line x1="35" y1="10" x2="25" y2="25" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
-          <line x1="35" y1="10" x2="42" y2="28" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
-          <line x1="25" y1="25" x2="42" y2="28" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
-          {/* 消息传递光点 */}
-          <circle r="1.5" fill="#FFD700">
-            <animateMotion path="M15,12 L35,10" dur="1.5s" repeatCount="indefinite" />
-          </circle>
-          <circle r="1.5" fill="#FFD700">
-            <animateMotion path="M35,10 L25,25" dur="1.8s" repeatCount="indefinite" begin="0.4s" />
-          </circle>
-          <circle r="1.5" fill="#FFD700">
-            <animateMotion path="M25,25 L42,28" dur="1.6s" repeatCount="indefinite" begin="0.8s" />
-          </circle>
+        {/* 剑（腰间，旗不精叛击） */}
+        <g transform="translate(260, 185) rotate(15)">
+          <rect x="0" y="0" width="3" height="55" fill="#C0C0C0" />
+          <path d="M-3,0 L8,0 L3,-8 L-3,-8Z" fill="#1a1a2e" />
         </g>
       </g>
 
-      {/* 底部文字 */}
-      <text x="260" y="235" textAnchor="middle" fontSize="10" fill="#8FA3B8" fontWeight="500">
-        贞德正在学习图神经网络...
-      </text>
+      {/* ===== 头部组 ===== */}
+      <g className="avenger-head">
+        <animateTransform attributeName="transform" type="translate" values="0,0;1,-1;0,0" dur="5s" repeatCount="indefinite" />
+
+        {/* 白发（散开，能量场中飞舞） */}
+        <g className="a-hair">
+          <animateTransform attributeName="transform" type="rotate" values="-1,190,80;1,190,80;-1,190,80" dur="4s" repeatCount="indefinite" />
+          <path d="M150 100 Q130 75 135 50 Q145 30 165 25 Q190 20 215 28 Q245 38 260 60 Q270 80 265 105 Q255 125 240 130 Q215 125 190 120 Q165 115 150 100Z"
+            fill="url(#aHair)" />
+          {/* 发丝飞舞 */}
+          <path d="M260 75 Q280 60 300 70 Q310 82 295 95" stroke="#E8E8E8" strokeWidth="2" fill="none" opacity="0.6">
+            <animate attributeName="d" values="M260 75 Q280 60 300 70 Q310 82 295 95;M260 75 Q285 55 305 65 Q318 78 300 92;M260 75 Q280 60 300 70 Q310 82 295 95" dur="3s" repeatCount="indefinite" />
+          </path>
+          <path d="M155 60 Q140 45 130 55 Q125 68 140 78" stroke="#E8E8E8" strokeWidth="2" fill="none" opacity="0.5">
+            <animate attributeName="d" values="M155 60 Q140 45 130 55 Q125 68 140 78;M155 60 Q137 42 127 52 Q122 65 138 76;M155 60 Q140 45 130 55 Q125 68 140 78" dur="3.5s" repeatCount="indefinite" begin="0.5s" />
+          </path>
+        </g>
+
+        {/* 头部 */}
+        <ellipse cx="195" cy="90" rx="34" ry="30" fill="#FFF5E6" />
+
+        {/* 刘海（白） */}
+        <path d="M165 76 Q175 63 195 60 Q215 63 235 76 Q231 73 215 70 Q195 66 175 70 Q165 74 165 76Z"
+          fill="url(#aHair)" />
+
+        {/* 额头黑饰 + 耳坠 */}
+        <path d="M175 72 Q195 60 215 72 Q212 67 195 63 Q178 67 175 72Z" fill="#2a1a2e" />
+        <ellipse cx="175" cy="80" rx="2" ry="3" fill="#6C3483" />
+        <ellipse cx="215" cy="80" rx="2" ry="3" fill="#6C3483" />
+
+        {/* 眼睛（金黄色竖瞳） */}
+        <g>
+          {/* 左眼 */}
+          <ellipse cx="183" cy="92" rx="7" ry="8" fill="white" />
+          <ellipse cx="183" cy="92" rx="5" ry="7" fill="#DAA520" />
+          {/* 竖瞳 */}
+          <rect x="181" y="88" width="3" height="8" rx="1" fill="#8B6914" />
+          <circle cx="182" cy="91" r="1.5" fill="white" />
+          <path d="M175 86 Q183 82 191 86" stroke="#6C3483" strokeWidth="1.5" fill="none" />
+        </g>
+        <g>
+          {/* 右眼 */}
+          <ellipse cx="207" cy="92" rx="7" ry="8" fill="white" />
+          <ellipse cx="207" cy="92" rx="5" ry="7" fill="#DAA520" />
+          <rect x="205" y="88" width="3" height="8" rx="1" fill="#8B6914" />
+          <circle cx="206" cy="91" r="1.5" fill="white" />
+          <path d="M199 86 Q207 82 215 86" stroke="#6C3483" strokeWidth="1.5" fill="none" />
+        </g>
+
+        {/* 嘴巴（嘴角微扬 - 高傲） */}
+        <path d="M190 102 Q198 107 206 102" stroke="#A0522D" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      </g>
     </svg>
   );
 }
 
-// ── 主组件 ──
+// ════════════════════════════════════════════════════════════╗
+//  中央GNN核心（两指之间的知识之火）
+// ════════════════════════════════════════════════════════════╝
+
+function CentralGnnCore() {
+  return (
+    <svg viewBox="0 0 120 120" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFD700" stopOpacity="0.8" />
+          <stop offset="40%" stopColor="#F4D03F" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#F4D03F" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* 外光晕 */}
+      <circle cx="60" cy="60" r="55" fill="url(#coreGlow)" opacity="0.3">
+        <animate attributeName="r" values="50;58;50" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.3;0.5;0.3" dur="3s" repeatCount="indefinite" />
+      </circle>
+      {/* 六边形核心 */}
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0 60 60;360 60 60" dur="20s" repeatCount="indefinite" />
+        <path d={hexPath(60, 60, 28)} fill="rgba(244,208,63,0.15)" stroke="#F4D03F" strokeWidth="1.5" />
+        {/* 内部节点 */}
+        {[0, 1, 2, 3, 4, 5].map(i => {
+          const angle = (Math.PI / 3) * i;
+          const x = 60 + 16 * Math.cos(angle);
+          const y = 60 + 16 * Math.sin(angle);
+          return <circle key={i} cx={x} cy={y} r="4" fill="#64b4ff" opacity="0.8">
+            <animate attributeName="opacity" values="0.8;0.3;0.8" dur="2s" repeatCount="indefinite" begin={`${i * 0.3}s`} />
+          </circle>;
+        })}
+        {/* 中心节点 */}
+        <circle cx="60" cy="60" r="6" fill="#FF6B6B" opacity="0.9">
+          <animate attributeName="r" values="6;8;6" dur="2s" repeatCount="indefinite" />
+        </circle>
+        {/* 连接线 */}
+        {[0, 1, 2, 3, 4, 5].map(i => {
+          const angle = (Math.PI / 3) * i;
+          const x = 60 + 16 * Math.cos(angle);
+          const y = 60 + 16 * Math.sin(angle);
+          return <line key={i} x1="60" y1="60" x2={x} y2={y} stroke="#64b4ff" strokeWidth="0.8" opacity="0.4" />;
+        })}
+      </g>
+      {/* 光点沿六边形边流动 */}
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <circle key={i} r="2" fill="#FFD700">
+          <animateMotion path={`M${60 + 28 * Math.cos((Math.PI / 3) * i)} ${60 + 28 * Math.sin((Math.PI / 3) * i)} A28,28 0 0,1 ${60 + 28 * Math.cos((Math.PI / 3) * ((i + 1) % 6))} ${60 + 28 * Math.sin((Math.PI / 3) * ((i + 1) % 6))}`} dur="3s" repeatCount="indefinite" begin={`${i * 0.5}s`} />
+        </circle>
+      ))}
+    </svg>
+  );
+}
+
+// ════════════════════════════════════════════════════════════╗
+//  主组件
+// ════════════════════════════════════════════════════════════╝
+
 export default function JoanLearningGNN() {
-  const sceneRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [orbitalPhase, setOrbitalPhase] = useState(0);
 
-  // 生成所有标签
-  const allTags: {
-    text: string;
-    color: string;
-    bg: string;
-    top: string;
-    left: string;
-    dur: string;
-    delay: string;
-    cat: string;
-  }[] = [];
+  // 轨道动画计时器
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setOrbitalPhase(p => p + 0.005);
+    }, 50);
+    return () => clearInterval(timer);
+  }, []);
 
-  let globalIdx = 0;
-  Object.entries(KNOWLEDGE_DATA).forEach(([cat, data]) => {
-    const positions = TAG_POSITIONS[cat] || [];
-    data.items.forEach((item, i) => {
-      const pos = positions[i] || { top: '50%', left: '50%' };
-      const anim = TAG_ANIMS[globalIdx % TAG_ANIMS.length];
-      allTags.push({
-        text: item,
-        color: data.color,
-        bg: data.bg,
-        top: pos.top,
-        left: pos.left,
-        dur: anim.dur,
-        delay: anim.delay,
-        cat,
-      });
-      globalIdx++;
-    });
-  });
+  // 统计节点总数（用于轨道分布）
+  const totalNodes = Object.values(GNN_CATEGORIES).reduce((s, c) => s + c.items.length, 0);
 
   return (
     <div className="w-full">
-      {/* 7:3 比例场景容器 */}
+      {/* 场景容器 - 2:1 宽屏比例（创造亚当横构图） */}
       <div
-        ref={sceneRef}
+        ref={containerRef}
         className="relative w-full rounded-2xl overflow-hidden"
-        style={{ paddingTop: '42.857%' }}
+        style={{ paddingTop: '50%' /* 2:1 比例 */ }}
       >
-        {/* 场景内容绝对定位 */}
+        {/* ── 场景内容绝对定位 ── */}
         <div className="absolute inset-0">
-          {/* 背景 */}
-          <div className="absolute inset-0 bg-gradient-to-br from-white via-[#f8faff] to-[#f0f4ff] dark:from-[#1a1f2e] dark:via-[#1e2335] dark:to-[#1a1f2e]" />
 
-          {/* 光晕脉动 */}
-          <div
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[120%]"
-            style={{
-              background: `radial-gradient(ellipse at center,
-                rgba(100,160,255,0.12) 0%,
-                rgba(160,120,255,0.08) 25%,
-                rgba(255,200,100,0.05) 50%,
-                transparent 70%)`,
-              animation: 'glowPulse 6s ease-in-out infinite',
-            }}
-          />
+          {/* 背景 - 透明（用户要求镂空） */}
+          <div className="absolute inset-0" style={{ background: 'transparent' }} />
 
-          {/* 贞德主体层 */}
-          <div
-            className="absolute bottom-[-2%] left-1/2 -translate-x-1/2 w-[85%] h-[85%]"
-            style={{
-              animation: 'breatheLie 5s ease-in-out infinite',
-              filter: 'drop-shadow(0 6px 24px rgba(74,111,165,0.2))',
-            }}
-          >
-            <ChibiJeanne />
+          {/* 暗色能量场（黑贞侧） */}
+          <div className="absolute inset-0" style={{
+            background: 'radial-gradient(ellipse at 75% 50%, rgba(108,52,131,0.08) 0%, transparent 60%)',
+            pointerEvents: 'none',
+          }} />
+
+          {/* 圣光场（白贞德侧） */}
+          <div className="absolute inset-0" style={{
+            background: 'radial-gradient(ellipse at 25% 50%, rgba(255,215,0,0.06) 0%, transparent 60%)',
+            pointerEvents: 'none',
+          }} />
+
+          {/* ===== 黑贞侧粒子 ===== */}
+          <ParticlesCanvas side="black" />
+
+          {/* ===== Ruler白贞德（左侧 - 亚当位置）===== */}
+          <div className="absolute" style={{
+            left: '2%',
+            top: '5%',
+            width: '46%',
+            height: '90%',
+            zIndex: 20,
+          }}>
+            <RulerJeanneSvg />
           </div>
 
-          {/* 粒子层 */}
-          <Particles />
+          {/* ===== 中央GNN核心（两指之间）===== */}
+          <div className="absolute" style={{
+            left: 'calc(50% - 30px)',
+            top: 'calc(50% - 30px)',
+            width: '60px',
+            height: '60px',
+            zIndex: 25,
+          }}>
+            <CentralGnnCore />
+          </div>
 
-          {/* SVG连接线层 */}
-          <ConnectionLines containerRef={sceneRef} />
+          {/* ===== Avenger黑贞（右侧 - 上帝位置）===== */}
+          <div className="absolute" style={{
+            right: '2%',
+            top: '5%',
+            width: '46%',
+            height: '90%',
+            zIndex: 20,
+          }}>
+            <AvengerJeanneSvg />
+          </div>
 
-          {/* 知识标签层 */}
-          {allTags.map((tag, i) => (
-            <KnowledgeTag
-              key={`${tag.cat}-${i}`}
-              text={tag.text}
-              color={tag.color}
-              bg={tag.bg}
-              top={tag.top}
-              left={tag.left}
-              dur={tag.dur}
-              delay={tag.delay}
-              idx={i}
-            />
-          ))}
+          {/* ===== 白贞德侧粒子 ===== */}
+          <ParticlesCanvas side="white" />
+
+          {/* ===== GNN知识节点（SVG覆盖层）===== */}
+          <svg viewBox="0 0 1000 500" className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }} xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="nodeGlow">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            {/* 按类别渲染节点 */}
+            {Object.entries(GNN_CATEGORIES).map(([catKey, cat]) => {
+              const catIdx = Object.keys(GNN_CATEGORIES).indexOf(catKey);
+              // 每类节点分布在不同轨道上
+              const orbitRx = 280 + catIdx * 40;
+              const orbitRy = 80 + catIdx * 20;
+              return cat.items.map((_, itemIdx) => (
+                <GnnNodeSvg
+                  key={`${catKey}-${itemIdx}`}
+                  catKey={catKey as CategoryKey}
+                  idx={itemIdx}
+                  total={cat.items.length}
+                  orbitRx={orbitRx}
+                  orbitRy={orbitRy}
+                  phase={orbitalPhase + catIdx * 0.5}
+                />
+              ));
+            })}
+            {/* 节点间连线（同类实线） */}
+            {/* 简化：绘制几根代表性连线 */}
+            <line x1="320" y1="140" x2="400" y2="160" stroke="#F4D03F" strokeWidth="0.8" opacity="0.3" strokeDasharray="4,4">
+              <animate attributeName="stroke-dashoffset" values="0;8" dur="1s" repeatCount="indefinite" />
+            </line>
+            <line x1="450" y1="180" x2="520" y2="200" stroke="#3498DB" strokeWidth="0.8" opacity="0.3" strokeDasharray="4,4">
+              <animate attributeName="stroke-dashoffset" values="0;8" dur="1.2s" repeatCount="indefinite" />
+            </line>
+            <line x1="380" y1="240" x2="440" y2="260" stroke="#2ECC71" strokeWidth="0.8" opacity="0.3" strokeDasharray="4,4">
+              <animate attributeName="stroke-dashoffset" values="0;8" dur="0.9s" repeatCount="indefinite" />
+            </line>
+            <line x1="340" y1="220" x2="420" y2="240" stroke="#9B59B6" strokeWidth="0.8" opacity="0.3" strokeDasharray="4,4">
+              <animate attributeName="stroke-dashoffset" values="0;8" dur="1.1s" repeatCount="indefinite" />
+            </line>
+          </svg>
+
         </div>
       </div>
 
       {/* CSS动画关键帧 */}
       <style>{`
-        @keyframes tagFloat {
+        /* 知识节点浮动 */
+        @keyframes nodeFloat {
           0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-6px); }
+          50% { transform: translateY(-4px); }
         }
-        @keyframes breatheLie {
-          0%, 100% { transform: translateX(-50%) scaleY(1) scaleX(1); }
-          50% { transform: translateX(-50%) scaleY(1.006) scaleX(1.001); }
-        }
-        @keyframes glowPulse {
-          0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
-          50% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); }
-        }
-        @keyframes particleDrift {
-          0%   { transform: translateX(-20px) translateY(0) scale(0); opacity: 0; }
-          10%  { opacity: 0.8; }
-          90%  { opacity: 0.8; }
-          100% { transform: translateX(calc(100vw)) translateY(-30px) scale(1); opacity: 0; }
-        }
-        .particle-drift {
-          animation-name: particleDrift;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
-        }
-        .knowledge-tag:hover {
+        .gnn-node-group:hover {
+          filter: url(#nodeGlow) brightness(1.3) !important;
           transform: scale(1.15) !important;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
           z-index: 50;
+        }
+
+        /* 减少动画（无障碍） */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+          }
         }
       `}</style>
     </div>
