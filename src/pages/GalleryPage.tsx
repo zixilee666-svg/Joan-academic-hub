@@ -5,14 +5,12 @@ import {
   Search,
   BookOpen,
   Globe,
-  Users,
   Sparkles,
   ArrowRight,
   LogOut,
   FlaskConical,
   Target,
   Calendar,
-  Layers,
 } from 'lucide-react';
 import { spaceService, type SpaceConfig } from '@/services/spaceService';
 import { useAuthStore } from '@/store/authStore';
@@ -366,58 +364,6 @@ export default function GalleryPage() {
           </Button>
         </motion.div>
 
-        {/* Stats Bar */}
-        <motion.div
-          className="flex items-center justify-center gap-8 text-sm mb-8"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          {viewMode === 'spaces' ? (
-            <>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <Users className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">{totalSpaces}</strong>
-                <span className="text-muted-foreground">位贞德</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <BookOpen className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">
-                  {spaces.reduce((sum, s) => sum + s.paperCount, 0)}
-                </strong>
-                <span className="text-muted-foreground">篇文献</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <Globe className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">{totalSpaces}</strong>
-                <span className="text-muted-foreground">个贞德</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <FlaskConical className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">{projects.length}</strong>
-                <span className="text-muted-foreground">个项目</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <Target className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">
-                  {projects.reduce((sum, p) => sum + (p.goalCount || 0), 0)}
-                </strong>
-                <span className="text-muted-foreground">个目标</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white/60 dark:bg-primary-800/60 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
-                <Users className="w-5 h-5 text-primary" />
-                <strong className="text-foreground">
-                  {new Set(projects.map(p => p.ownerUsername)).size}
-                </strong>
-                <span className="text-muted-foreground">位研究者</span>
-              </div>
-            </>
-          )}
-        </motion.div>
-
         {/* Search + Filters */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -477,14 +423,11 @@ export default function GalleryPage() {
           ) : viewMode === 'spaces' ? (
             spaces.length === 0 ? (
               <motion.div
-                className="text-center py-10"
+                className="py-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
                 <JoanLearningGNN />
-                <p className="text-sm text-primary-400 mt-4">
-                  尝试调整搜索条件，或成为第一个创建学术贞德的人！
-                </p>
               </motion.div>
             ) : (
               <>
@@ -545,14 +488,11 @@ export default function GalleryPage() {
           ) : (
             projects.length === 0 ? (
               <motion.div
-                className="text-center py-10"
+                className="py-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
                 <JoanLearningGNN />
-                <p className="text-sm text-primary-400 mt-4">
-                  在「我的研究」中创建项目后，贞德会帮你展示在这里！
-                </p>
               </motion.div>
             ) : (
               <>

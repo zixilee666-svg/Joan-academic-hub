@@ -1,247 +1,605 @@
-import { motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
 
 /**
- * Q版贞德学习图神经网络 动态SVG组件
- * 纯SVG+CSS动画，无外部依赖
+ * FGO Q版贞德(Ruler) 躺卧学习GNN 动态场景组件
+ * 7:3 横版比例 | 知识标签环绕 | 呼吸动画 | 粒子光效 | SVG连接线
  */
-export default function JoanLearningGNN() {
+
+// ── GNN知识图谱数据 ──
+const KNOWLEDGE_DATA = {
+  gnn: {
+    name: 'GNN模型',
+    color: '#3b82f6',
+    bg: 'rgba(59,130,246,0.15)',
+    items: ['GCN', 'GAT', 'GraphSAGE', 'GIN', 'R-GCN', 'GAE'],
+  },
+  dataset: {
+    name: '数据集',
+    color: '#10b981',
+    bg: 'rgba(16,185,129,0.15)',
+    items: ['Cora', 'Citeseer', 'PubMed', 'ogbn-arxiv', 'PPI', 'Reddit'],
+  },
+  loss: {
+    name: '损失函数',
+    color: '#f97316',
+    bg: 'rgba(249,115,22,0.15)',
+    items: ['CrossEntropy', 'NLLLoss', 'Contrastive', 'InfoNCE'],
+  },
+  basic: {
+    name: '基础知识',
+    color: '#8b5cf6',
+    bg: 'rgba(139,92,246,0.15)',
+    items: ['Message Passing', 'Node Embedding', 'Graph Convolution', 'Attention', 'Aggregation'],
+  },
+};
+
+// 标签位置配置（相对于场景容器的百分比）
+const TAG_POSITIONS: Record<string, { top: string; left: string }[]> = {
+  gnn: [
+    { top: '6%', left: '4%' },
+    { top: '2%', left: '22%' },
+    { top: '0%', left: '42%' },
+    { top: '3%', left: '60%' },
+    { top: '8%', left: '76%' },
+    { top: '14%', left: '88%' },
+  ],
+  dataset: [
+    { top: '78%', left: '2%' },
+    { top: '86%', left: '14%' },
+    { top: '90%', left: '32%' },
+    { top: '88%', left: '52%' },
+    { top: '82%', left: '70%' },
+    { top: '76%', left: '86%' },
+  ],
+  loss: [
+    { top: '32%', left: '1%' },
+    { top: '52%', left: '3%' },
+    { top: '68%', left: '8%' },
+    { top: '44%', left: '90%' },
+  ],
+  basic: [
+    { top: '22%', left: '12%' },
+    { top: '72%', left: '20%' },
+    { top: '28%', left: '80%' },
+    { top: '62%', left: '82%' },
+    { top: '48%', left: '48%' },
+  ],
+};
+
+// 标签动画参数
+const TAG_ANIMS = [
+  { dur: '3.5s', delay: '0s' },
+  { dur: '4.0s', delay: '0.3s' },
+  { dur: '3.8s', delay: '0.6s' },
+  { dur: '4.2s', delay: '0.9s' },
+  { dur: '3.6s', delay: '1.2s' },
+  { dur: '4.0s', delay: '1.5s' },
+];
+
+// ── 粒子组件 ──
+function Particles() {
+  const particles = Array.from({ length: 18 }, (_, i) => ({
+    id: i,
+    top: `${8 + Math.random() * 84}%`,
+    size: 2 + Math.random() * 3,
+    duration: 6 + Math.random() * 8,
+    delay: Math.random() * 10,
+    color: ['#64b4ff', '#ffb4dc', '#ffe066', '#7dd3c0', '#c8a8ff'][Math.floor(Math.random() * 5)],
+  }));
+
   return (
-    <div className="relative w-full max-w-md mx-auto">
-      <svg
-        viewBox="0 0 400 320"
-        className="w-full h-auto"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          {/* 渐变定义 */}
-          <linearGradient id="hairGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#F4D03F" />
-            <stop offset="100%" stopColor="#D4AC0D" />
-          </linearGradient>
-          <linearGradient id="dressGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#5B8DB8" />
-            <stop offset="100%" stopColor="#3D5A80" />
-          </linearGradient>
-          <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FFEFD5" />
-            <stop offset="100%" stopColor="#FFDAB9" />
-          </linearGradient>
-          <radialGradient id="glowNode1">
-            <stop offset="0%" stopColor="#FF6B6B" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#FF6B6B" stopOpacity="0.3" />
-          </radialGradient>
-          <radialGradient id="glowNode2">
-            <stop offset="0%" stopColor="#4ECDC4" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#4ECDC4" stopOpacity="0.3" />
-          </radialGradient>
-          <radialGradient id="glowNode3">
-            <stop offset="0%" stopColor="#45B7D1" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#45B7D1" stopOpacity="0.3" />
-          </radialGradient>
-          <radialGradient id="glowNode4">
-            <stop offset="0%" stopColor="#96CEB4" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#96CEB4" stopOpacity="0.3" />
-          </radialGradient>
-          <radialGradient id="glowNode5">
-            <stop offset="0%" stopColor="#FFEAA7" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#FFEAA7" stopOpacity="0.3" />
-          </radialGradient>
-          <filter id="softGlow">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
+      {particles.map((p) => (
+        <div
+          key={p.id}
+          className="particle-drift"
+          style={{
+            position: 'absolute',
+            left: '-10px',
+            top: p.top,
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            backgroundColor: p.color,
+            boxShadow: `0 0 ${p.size * 3}px ${p.color}`,
+            animationDuration: `${p.duration}s`,
+            animationDelay: `${p.delay}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
-        {/* 背景桌面 */}
-        <ellipse cx="200" cy="295" rx="160" ry="18" fill="#E8DCC8" opacity="0.6" />
-        <rect x="60" y="280" width="280" height="8" rx="4" fill="#D4C4A8" opacity="0.5" />
+// ── 知识标签组件 ──
+function KnowledgeTag({
+  text,
+  color,
+  bg,
+  top,
+  left,
+  dur,
+  delay,
+  idx,
+}: {
+  text: string;
+  color: string;
+  bg: string;
+  top: string;
+  left: string;
+  dur: string;
+  delay: string;
+  idx: number;
+}) {
+  return (
+    <div
+      className="knowledge-tag"
+      style={{
+        position: 'absolute',
+        top,
+        left,
+        padding: '4px 12px',
+        borderRadius: '16px',
+        fontSize: '11px',
+        fontWeight: 600,
+        color,
+        background: bg,
+        border: `1px solid ${color}30`,
+        backdropFilter: 'blur(4px)',
+        cursor: 'pointer',
+        zIndex: 30,
+        whiteSpace: 'nowrap',
+        animationDuration: dur,
+        animationDelay: delay,
+        animationName: 'tagFloat',
+        animationIterationCount: 'infinite',
+        animationTimingFunction: 'linear',
+      }}
+      data-idx={idx}
+    >
+      {text}
+    </div>
+  );
+}
 
-        {/* === GNN图网络层（在贞德身后）=== */}
-        <g className="gnn-graph">
-          {/* 边 - 连线 */}
-          <line x1="130" y1="80" x2="180" y2="110" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="180" y1="110" x2="240" y2="90" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="240" y1="90" x2="290" y2="130" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="180" y1="110" x2="220" y2="150" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="130" y1="80" x2="160" y2="140" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="160" y1="140" x2="220" y2="150" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="220" y1="150" x2="290" y2="130" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
-          <line x1="240" y1="90" x2="220" y2="150" stroke="#B8C5D6" strokeWidth="2" opacity="0.6" />
+// ── SVG连接线层 ──
+function ConnectionLines({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
+  const [lines, setLines] = useState<string>('');
 
-          {/* 消息传递光点 - 沿着边移动 */}
-          <circle r="4" fill="#FFD700" filter="url(#softGlow)">
-            <animateMotion path="M130,80 L180,110" dur="2s" repeatCount="indefinite" />
-          </circle>
-          <circle r="4" fill="#FF6B6B" filter="url(#softGlow)">
-            <animateMotion path="M180,110 L240,90" dur="2.5s" repeatCount="indefinite" begin="0.3s" />
-          </circle>
-          <circle r="4" fill="#4ECDC4" filter="url(#softGlow)">
-            <animateMotion path="M240,90 L290,130" dur="2.2s" repeatCount="indefinite" begin="0.6s" />
-          </circle>
-          <circle r="4" fill="#45B7D1" filter="url(#softGlow)">
-            <animateMotion path="M160,140 L220,150" dur="1.8s" repeatCount="indefinite" begin="0.9s" />
-          </circle>
-          <circle r="4" fill="#96CEB4" filter="url(#softGlow)">
-            <animateMotion path="M220,150 L290,130" dur="2.3s" repeatCount="indefinite" begin="1.2s" />
-          </circle>
-          <circle r="4" fill="#FFEAA7" filter="url(#softGlow)">
-            <animateMotion path="M130,80 L160,140" dur="2.7s" repeatCount="indefinite" begin="0.5s" />
-          </circle>
-          <circle r="4" fill="#DDA0DD" filter="url(#softGlow)">
-            <animateMotion path="M240,90 L220,150" dur="2s" repeatCount="indefinite" begin="1.5s" />
-          </circle>
+  useEffect(() => {
+    const draw = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
 
-          {/* 节点 */}
-          <g className="node-pulse">
-            <circle cx="130" cy="80" r="14" fill="url(#glowNode1)" filter="url(#softGlow)">
-              <animate attributeName="r" values="14;16;14" dur="3s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.9;0.6;0.9" dur="3s" repeatCount="indefinite" />
-            </circle>
-            <text x="130" y="84" textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">h₁</text>
-          </g>
-          <g className="node-pulse">
-            <circle cx="180" cy="110" r="14" fill="url(#glowNode2)" filter="url(#softGlow)">
-              <animate attributeName="r" values="14;16;14" dur="3s" repeatCount="indefinite" begin="0.5s" />
-            </circle>
-            <text x="180" y="114" textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">h₂</text>
-          </g>
-          <g className="node-pulse">
-            <circle cx="240" cy="90" r="14" fill="url(#glowNode3)" filter="url(#softGlow)">
-              <animate attributeName="r" values="14;16;14" dur="3s" repeatCount="indefinite" begin="1s" />
-            </circle>
-            <text x="240" y="94" textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">h₃</text>
-          </g>
-          <g className="node-pulse">
-            <circle cx="290" cy="130" r="14" fill="url(#glowNode4)" filter="url(#softGlow)">
-              <animate attributeName="r" values="14;16;14" dur="3s" repeatCount="indefinite" begin="1.5s" />
-            </circle>
-            <text x="290" y="134" textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">h₄</text>
-          </g>
-          <g className="node-pulse">
-            <circle cx="160" cy="140" r="12" fill="url(#glowNode5)" filter="url(#softGlow)">
-              <animate attributeName="r" values="12;14;12" dur="3s" repeatCount="indefinite" begin="0.3s" />
-            </circle>
-            <text x="160" y="144" textAnchor="middle" fontSize="9" fill="white" fontWeight="bold">h₅</text>
-          </g>
-          <g className="node-pulse">
-            <circle cx="220" cy="150" r="12" fill="url(#glowNode1)" filter="url(#softGlow)">
-              <animate attributeName="r" values="12;14;12" dur="3s" repeatCount="indefinite" begin="0.8s" />
-            </circle>
-            <text x="220" y="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="bold">h₆</text>
-          </g>
+      const tags = container.querySelectorAll<HTMLElement>('.knowledge-tag');
+      const centers: { x: number; y: number; cat: string }[] = [];
+
+      tags.forEach((tag) => {
+        const r = tag.getBoundingClientRect();
+        const cat = Object.entries(KNOWLEDGE_DATA).find(([_, data]) =>
+          data.items.includes(tag.textContent?.trim() || '')
+        )?.[0] || '';
+        centers.push({
+          x: r.left - rect.left + r.width / 2,
+          y: r.top - rect.top + r.height / 2,
+          cat,
+        });
+      });
+
+      const catColors: Record<string, string> = {
+        gnn: '#3b82f6',
+        dataset: '#10b981',
+        loss: '#f97316',
+        basic: '#8b5cf6',
+      };
+
+      let paths = '';
+      Object.keys(KNOWLEDGE_DATA).forEach((cat) => {
+        const catCenters = centers.filter((c) => c.cat === cat);
+        for (let i = 0; i < catCenters.length - 1; i++) {
+          const c1 = catCenters[i];
+          const c2 = catCenters[i + 1];
+          paths += `<line x1="${c1.x}" y1="${c1.y}" x2="${c2.x}" y2="${c2.y}" stroke="${catColors[cat]}" stroke-width="1" opacity="0.25" stroke-dasharray="3,3"/>`;
+        }
+      });
+
+      setLines(paths);
+    };
+
+    const timer = setTimeout(draw, 600);
+    window.addEventListener('resize', draw);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', draw);
+    };
+  }, [containerRef]);
+
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none z-25"
+      style={{ zIndex: 25 }}
+      dangerouslySetInnerHTML={{ __html: lines }}
+    />
+  );
+}
+
+// ── Q版贞德 SVG ──
+function ChibiJeanne() {
+  return (
+    <svg
+      viewBox="0 0 520 240"
+      className="w-full h-full"
+      preserveAspectRatio="xMidYMax meet"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        {/* 头发渐变 */}
+        <linearGradient id="hairG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#F7DC6F" />
+          <stop offset="50%" stopColor="#F4D03F" />
+          <stop offset="100%" stopColor="#D4AC0D" />
+        </linearGradient>
+        {/* 皮肤 */}
+        <linearGradient id="skinG" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FFF5E6" />
+          <stop offset="100%" stopColor="#FFE4C4" />
+        </linearGradient>
+        {/* 铠甲银 */}
+        <linearGradient id="armorG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#E8E8E8" />
+          <stop offset="40%" stopColor="#C0C0C0" />
+          <stop offset="100%" stopColor="#909090" />
+        </linearGradient>
+        {/* 深蓝裙 */}
+        <linearGradient id="dressG" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#4A6FA5" />
+          <stop offset="100%" stopColor="#2E4A6F" />
+        </linearGradient>
+        {/* 白披风 */}
+        <linearGradient id="capeG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#E8EDF2" />
+        </linearGradient>
+        {/* 光晕 */}
+        <radialGradient id="holyGlow">
+          <stop offset="0%" stopColor="rgba(100,160,255,0.2)" />
+          <stop offset="50%" stopColor="rgba(160,120,255,0.1)" />
+          <stop offset="100%" stopColor="transparent" />
+        </radialGradient>
+        {/* 平板屏幕 */}
+        <linearGradient id="screenG" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#1a1a2e" />
+          <stop offset="100%" stopColor="#16213e" />
+        </linearGradient>
+        {/* 平板发光 */}
+        <filter id="tabletGlow">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        {/* 柔和阴影 */}
+        <filter id="softShadow">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.15" />
+        </filter>
+      </defs>
+
+      {/* 底部阴影 */}
+      <ellipse cx="260" cy="225" rx="180" ry="12" fill="#000" opacity="0.08" />
+
+      {/* 光晕背景 */}
+      <ellipse cx="260" cy="120" rx="200" ry="100" fill="url(#holyGlow)">
+        <animate attributeName="opacity" values="0.6;1;0.6" dur="6s" repeatCount="indefinite" />
+        <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="6s" repeatCount="indefinite" additive="sum" />
+      </ellipse>
+
+      {/* ===== 身体组（呼吸动画） ===== */}
+      <g>
+        <animateTransform
+          attributeName="transform"
+          type="translate"
+          values="0,0; 0,-1.5; 0,0"
+          dur="5s"
+          repeatCount="indefinite"
+        />
+
+        {/* 白披风（底层） */}
+        <path
+          d="M120 180 Q100 120 140 90 Q180 60 260 65 Q340 60 400 80 Q450 100 440 150 Q430 200 380 210 Q320 220 260 215 Q200 220 140 210 Q110 205 120 180Z"
+          fill="url(#capeG)"
+          filter="url(#softShadow)"
+          opacity="0.95"
+        />
+        {/* 披风上的十字纹章 */}
+        <path d="M250 100 L250 130 M235 115 L265 115" stroke="#C9A04D" strokeWidth="2.5" fill="none" opacity="0.4" />
+
+        {/* 深蓝裙子 */}
+        <path
+          d="M160 140 Q150 180 170 200 Q220 210 280 208 Q340 206 380 195 Q400 180 390 150 Q380 130 340 125 Q280 120 220 125 Q170 130 160 140Z"
+          fill="url(#dressG)"
+        />
+
+        {/* 银甲胸甲 */}
+        <path
+          d="M180 125 Q200 105 260 100 Q320 105 360 125 Q370 140 360 155 Q320 145 260 142 Q200 145 170 155 Q160 140 180 125Z"
+          fill="url(#armorG)"
+          filter="url(#softShadow)"
+        />
+        {/* 铠甲装饰线 */}
+        <path d="M220 118 Q260 112 300 118" stroke="#A0A0A0" strokeWidth="1.5" fill="none" />
+        <path d="M210 135 Q260 130 310 135" stroke="#A0A0A0" strokeWidth="1" fill="none" opacity="0.6" />
+
+        {/* 腰带 */}
+        <path d="M175 150 Q260 142 375 150" stroke="#2E4A6F" strokeWidth="4" fill="none" />
+        <circle cx="260" cy="146" r="5" fill="#C9A04D" />
+
+        {/* 左腿（伸展） */}
+        <path d="M170 185 Q140 190 100 192 Q80 193 75 195 Q70 198 80 200 Q120 202 180 198Z" fill="url(#dressG)" />
+        {/* 左膝甲 */}
+        <ellipse cx="130" cy="193" rx="14" ry="8" fill="url(#armorG)" transform="rotate(-5 130 193)" />
+        {/* 左黑袜 */}
+        <path d="M85 193 Q70 195 65 198 Q62 202 68 204 Q85 205 95 202Z" fill="#1a1a2e" />
+        {/* 左脚 */}
+        <ellipse cx="62" cy="200" rx="10" ry="6" fill="url(#skinG)" transform="rotate(-10 62 200)" />
+
+        {/* 右腿（弯曲） */}
+        <path d="M340 185 Q380 180 410 175 Q430 172 435 175 Q440 178 430 182 Q390 188 350 192Z" fill="url(#dressG)" />
+        {/* 右膝甲 */}
+        <ellipse cx="390" cy="178" rx="14" ry="8" fill="url(#armorG)" transform="rotate(5 390 178)" />
+        {/* 右黑袜 */}
+        <path d="M425 175 Q440 173 445 176 Q448 180 442 182 Q428 183 420 180Z" fill="#1a1a2e" />
+        {/* 右脚 */}
+        <ellipse cx="448" cy="178" rx="10" ry="6" fill="url(#skinG)" transform="rotate(10 448 178)" />
+
+        {/* ===== 头部 ===== */}
+        {/* 后发（大波浪） */}
+        <path
+          d="M220 95 Q200 80 190 60 Q185 40 200 35 Q220 30 240 40 Q260 30 280 35 Q300 40 295 60 Q290 80 270 95Z"
+          fill="url(#hairG)"
+        />
+        {/* 粗辫子（右侧） */}
+        <path
+          d="M285 55 Q310 50 325 65 Q340 80 335 100 Q330 115 310 110 Q300 105 295 90 Q290 75 285 55Z"
+          fill="url(#hairG)"
+        />
+        {/* 辫子纹理 */}
+        <path d="M295 65 Q310 70 320 80" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
+        <path d="M298 78 Q312 82 322 92" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
+        <path d="M300 92 Q310 95 318 102" stroke="#D4AC0D" strokeWidth="1.5" fill="none" />
+
+        {/* 头部轮廓 */}
+        <ellipse cx="245" cy="72" rx="38" ry="34" fill="url(#skinG)" />
+
+        {/* 刘海 */}
+        <path
+          d="M210 50 Q220 38 245 36 Q270 38 280 50 Q275 48 265 46 Q245 42 225 46 Q215 48 210 50Z"
+          fill="url(#hairG)"
+        />
+
+        {/* 银色额冠 */}
+        <path
+          d="M215 48 Q245 35 275 48 Q270 42 245 38 Q220 42 215 48Z"
+          fill="#D4D4D4"
+        />
+        <ellipse cx="245" cy="41" rx="4" ry="5" fill="#C9A04D" />
+        <path d="M232 44 L232 38 M258 44 L258 38" stroke="#A0A0A0" strokeWidth="1.5" />
+
+        {/* 呆毛 */}
+        <path d="M245 36 Q248 22 255 26" stroke="#F4D03F" strokeWidth="2.5" fill="none" strokeLinecap="round">
+          <animate attributeName="d" values="M245 36 Q248 22 255 26;M245 36 Q250 20 257 24;M245 36 Q248 22 255 26" dur="3s" repeatCount="indefinite" />
+        </path>
+
+        {/* 眼睛（紫罗兰色） */}
+        {/* 左眼 */}
+        <g>
+          <ellipse cx="232" cy="74" rx="8" ry="10" fill="white" />
+          <ellipse cx="232" cy="74" rx="6" ry="8" fill="#7B68EE" />
+          <circle cx="233" cy="72" r="3" fill="white" />
+          <path d="M223 68 Q232 64 241 68" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
+        </g>
+        {/* 右眼 */}
+        <g>
+          <ellipse cx="258" cy="74" rx="8" ry="10" fill="white" />
+          <ellipse cx="258" cy="74" rx="6" ry="8" fill="#7B68EE" />
+          <circle cx="259" cy="72" r="3" fill="white" />
+          <path d="M249 68 Q258 64 267 68" stroke="#5B4B8A" strokeWidth="1.5" fill="none" />
         </g>
 
-        {/* === Q版贞德主体 === */}
-        <g className="chibi-joan">
-          {/* 身体上下浮动动画 */}
-          <animateTransform
-            attributeName="transform"
-            type="translate"
-            values="0,0; 0,-3; 0,0"
-            dur="3s"
-            repeatCount="indefinite"
+        {/* 腮红 */}
+        <ellipse cx="220" cy="86" rx="5" ry="3" fill="#FFB6C1" opacity="0.4" />
+        <ellipse cx="270" cy="86" rx="5" ry="3" fill="#FFB6C1" opacity="0.4" />
+
+        {/* 嘴巴（微笑） */}
+        <path d="M240 90 Q245 94 250 90" stroke="#D4846A" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+
+        {/* ===== 手臂 ===== */}
+        {/* 右臂（自然放腹部） */}
+        <path d="M320 135 Q340 150 330 165 Q310 170 300 158Z" fill="url(#skinG)" />
+        {/* 右手 */}
+        <ellipse cx="328" cy="162" rx="8" ry="6" fill="url(#skinG)" transform="rotate(20 328 162)" />
+
+        {/* 左臂（举平板） */}
+        <path d="M175 130 Q150 115 140 100 Q135 90 145 88 Q155 86 165 95 Q180 108 190 125Z" fill="url(#skinG)" />
+        {/* 左手 */}
+        <ellipse cx="142" cy="90" rx="8" ry="6" fill="url(#skinG)" transform="rotate(-30 142 90)" />
+
+        {/* ===== 发光平板 ===== */}
+        <g transform="translate(85, 58) rotate(-8)">
+          {/* 平板边框 */}
+          <rect x="0" y="0" width="58" height="42" rx="4" fill="#2a2a3a" filter="url(#tabletGlow)" />
+          {/* 屏幕 */}
+          <rect x="3" y="3" width="52" height="36" rx="2" fill="url(#screenG)" />
+          {/* 屏幕上的神经网络节点 */}
+          <circle cx="15" cy="12" r="4" fill="#FF6B6B" opacity="0.9">
+            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="35" cy="10" r="4" fill="#4ECDC4" opacity="0.9">
+            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="0.5s" />
+          </circle>
+          <circle cx="25" cy="25" r="4" fill="#45B7D1" opacity="0.9">
+            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="1s" />
+          </circle>
+          <circle cx="42" cy="28" r="3" fill="#96CEB4" opacity="0.9">
+            <animate attributeName="opacity" values="0.9;0.4;0.9" dur="2s" repeatCount="indefinite" begin="1.5s" />
+          </circle>
+          {/* 连接线 */}
+          <line x1="15" y1="12" x2="35" y2="10" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
+          <line x1="15" y1="12" x2="25" y2="25" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
+          <line x1="35" y1="10" x2="25" y2="25" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
+          <line x1="35" y1="10" x2="42" y2="28" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
+          <line x1="25" y1="25" x2="42" y2="28" stroke="#64b4ff" strokeWidth="1" opacity="0.6" />
+          {/* 消息传递光点 */}
+          <circle r="1.5" fill="#FFD700">
+            <animateMotion path="M15,12 L35,10" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+          <circle r="1.5" fill="#FFD700">
+            <animateMotion path="M35,10 L25,25" dur="1.8s" repeatCount="indefinite" begin="0.4s" />
+          </circle>
+          <circle r="1.5" fill="#FFD700">
+            <animateMotion path="M25,25 L42,28" dur="1.6s" repeatCount="indefinite" begin="0.8s" />
+          </circle>
+        </g>
+      </g>
+
+      {/* 底部文字 */}
+      <text x="260" y="235" textAnchor="middle" fontSize="10" fill="#8FA3B8" fontWeight="500">
+        贞德正在学习图神经网络...
+      </text>
+    </svg>
+  );
+}
+
+// ── 主组件 ──
+export default function JoanLearningGNN() {
+  const sceneRef = useRef<HTMLDivElement>(null);
+
+  // 生成所有标签
+  const allTags: {
+    text: string;
+    color: string;
+    bg: string;
+    top: string;
+    left: string;
+    dur: string;
+    delay: string;
+    cat: string;
+  }[] = [];
+
+  let globalIdx = 0;
+  Object.entries(KNOWLEDGE_DATA).forEach(([cat, data]) => {
+    const positions = TAG_POSITIONS[cat] || [];
+    data.items.forEach((item, i) => {
+      const pos = positions[i] || { top: '50%', left: '50%' };
+      const anim = TAG_ANIMS[globalIdx % TAG_ANIMS.length];
+      allTags.push({
+        text: item,
+        color: data.color,
+        bg: data.bg,
+        top: pos.top,
+        left: pos.left,
+        dur: anim.dur,
+        delay: anim.delay,
+        cat,
+      });
+      globalIdx++;
+    });
+  });
+
+  return (
+    <div className="w-full">
+      {/* 7:3 比例场景容器 */}
+      <div
+        ref={sceneRef}
+        className="relative w-full rounded-2xl overflow-hidden"
+        style={{ paddingTop: '42.857%' }}
+      >
+        {/* 场景内容绝对定位 */}
+        <div className="absolute inset-0">
+          {/* 背景 */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white via-[#f8faff] to-[#f0f4ff] dark:from-[#1a1f2e] dark:via-[#1e2335] dark:to-[#1a1f2e]" />
+
+          {/* 光晕脉动 */}
+          <div
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[120%]"
+            style={{
+              background: `radial-gradient(ellipse at center,
+                rgba(100,160,255,0.12) 0%,
+                rgba(160,120,255,0.08) 25%,
+                rgba(255,200,100,0.05) 50%,
+                transparent 70%)`,
+              animation: 'glowPulse 6s ease-in-out infinite',
+            }}
           />
 
-          {/* 后发（金色长发） */}
-          <ellipse cx="200" cy="215" rx="38" ry="42" fill="url(#hairGrad)" />
-          <path d="M165 200 Q155 230 160 260 Q165 275 175 270" fill="#D4AC0D" />
-          <path d="M235 200 Q245 230 240 260 Q235 275 225 270" fill="#D4AC0D" />
+          {/* 贞德主体层 */}
+          <div
+            className="absolute bottom-[-2%] left-1/2 -translate-x-1/2 w-[85%] h-[85%]"
+            style={{
+              animation: 'breatheLie 5s ease-in-out infinite',
+              filter: 'drop-shadow(0 6px 24px rgba(74,111,165,0.2))',
+            }}
+          >
+            <ChibiJeanne />
+          </div>
 
-          {/* 身体/衣服 */}
-          <path d="M175 245 Q170 280 165 295 L235 295 Q230 280 225 245 Z" fill="url(#dressGrad)" />
-          {/* 白色领口 */}
-          <path d="M185 245 Q200 258 215 245" fill="none" stroke="white" strokeWidth="3" />
-          {/* 金色装饰线 */}
-          <line x1="175" y1="265" x2="225" y2="265" stroke="#C9A04D" strokeWidth="2" />
-          <line x1="172" y1="280" x2="228" y2="280" stroke="#C9A04D" strokeWidth="2" />
+          {/* 粒子层 */}
+          <Particles />
 
-          {/* 左手拿书 */}
-          <ellipse cx="155" cy="265" rx="12" ry="22" fill="url(#dressGrad)" transform="rotate(-15 155 265)" />
-          {/* 书本 */}
-          <rect x="135" y="250" width="22" height="28" rx="2" fill="#8B4513" transform="rotate(-10 146 264)" />
-          <rect x="137" y="252" width="18" height="24" rx="1" fill="#FFF8DC" transform="rotate(-10 146 264)" />
-          <text x="142" y="268" fontSize="8" fill="#5B8DB8" transform="rotate(-10 146 264)">GNN</text>
+          {/* SVG连接线层 */}
+          <ConnectionLines containerRef={sceneRef} />
 
-          {/* 右手（托腮/思考状） */}
-          <ellipse cx="245" cy="255" rx="10" ry="18" fill="url(#dressGrad)" transform="rotate(20 245 255)" />
-          <circle cx="250" cy="240" r="7" fill="url(#skinGrad)" />
-
-          {/* 头部 */}
-          <circle cx="200" cy="205" r="35" fill="url(#skinGrad)" />
-
-          {/* 前发/刘海 */}
-          <path d="M168 190 Q175 170 200 168 Q225 170 232 190 Q228 185 220 182 Q200 178 180 182 Q172 185 168 190" fill="url(#hairGrad)" />
-          {/* 呆毛 */}
-          <path d="M200 170 Q205 155 212 158 Q208 162 203 170" fill="none" stroke="#F4D03F" strokeWidth="2.5" strokeLinecap="round" />
-
-          {/* 眼睛（蓝色） */}
-          <g>
-            {/* 左眼 */}
-            <ellipse cx="188" cy="208" rx="7" ry="9" fill="white" />
-            <ellipse cx="188" cy="208" rx="5" ry="7" fill="#3D5A80" />
-            <circle cx="189" cy="206" r="2.5" fill="white" />
-            {/* 右眼 */}
-            <ellipse cx="212" cy="208" rx="7" ry="9" fill="white" />
-            <ellipse cx="212" cy="208" rx="5" ry="7" fill="#3D5A80" />
-            <circle cx="213" cy="206" r="2.5" fill="white" />
-            {/* 眨眼动画 */}
-            <animate attributeName="opacity" values="1;1;0;1;1" dur="4s" repeatCount="indefinite" begin="1s" />
-          </g>
-
-          {/* 腮红 */}
-          <ellipse cx="178" cy="220" rx="5" ry="3" fill="#FFB6C1" opacity="0.5" />
-          <ellipse cx="222" cy="220" rx="5" ry="3" fill="#FFB6C1" opacity="0.5" />
-
-          {/* 嘴巴（微笑） */}
-          <path d="M194 225 Q200 230 206 225" fill="none" stroke="#CD853F" strokeWidth="1.5" strokeLinecap="round" />
-
-          {/* 思考气泡 */}
-          <g opacity="0.85">
-            <animateTransform
-              attributeName="transform"
-              type="translate"
-              values="0,0; 0,-4; 0,0"
-              dur="2.5s"
-              repeatCount="indefinite"
+          {/* 知识标签层 */}
+          {allTags.map((tag, i) => (
+            <KnowledgeTag
+              key={`${tag.cat}-${i}`}
+              text={tag.text}
+              color={tag.color}
+              bg={tag.bg}
+              top={tag.top}
+              left={tag.left}
+              dur={tag.dur}
+              delay={tag.delay}
+              idx={i}
             />
-            <ellipse cx="265" cy="90" rx="42" ry="28" fill="white" stroke="#B8C5D6" strokeWidth="1.5" />
-            <circle cx="250" cy="120" r="4" fill="white" stroke="#B8C5D6" strokeWidth="1" />
-            <circle cx="245" cy="128" r="2.5" fill="white" stroke="#B8C5D6" strokeWidth="1" />
-            <text x="265" y="85" textAnchor="middle" fontSize="11" fill="#3D5A80" fontWeight="600">
-              <tspan x="265" dy="0">hᵥ⁽ˡ⁺¹⁾ = σ(</tspan>
-              <tspan x="265" dy="14">∑ W·hᵤ⁽ˡ⁾)</tspan>
-            </text>
-          </g>
-        </g>
+          ))}
+        </div>
+      </div>
 
-        {/* 漂浮的装饰符号 */}
-        <g opacity="0.4">
-          <text x="80" y="120" fontSize="14" fill="#5B8DB8">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-8; 0,0" dur="3.5s" repeatCount="indefinite" />
-            ∑
-          </text>
-          <text x="330" y="80" fontSize="12" fill="#4ECDC4">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,6; 0,0" dur="4s" repeatCount="indefinite" begin="0.5s" />
-            σ
-          </text>
-          <text x="90" y="180" fontSize="10" fill="#FF6B6B">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-5; 0,0" dur="3s" repeatCount="indefinite" begin="1s" />
-            ReLU
-          </text>
-          <text x="340" y="170" fontSize="11" fill="#96CEB4">
-            <animateTransform attributeName="transform" type="translate" values="0,0; 0,7; 0,0" dur="3.8s" repeatCount="indefinite" begin="1.5s" />
-            ∂L/∂W
-          </text>
-        </g>
-
-        {/* 底部文字标签 */}
-        <text x="200" y="315" textAnchor="middle" fontSize="11" fill="#8FA3B8" fontWeight="500">
-          贞德正在学习图神经网络的消息传递机制...
-        </text>
-      </svg>
+      {/* CSS动画关键帧 */}
+      <style>{`
+        @keyframes tagFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        @keyframes breatheLie {
+          0%, 100% { transform: translateX(-50%) scaleY(1) scaleX(1); }
+          50% { transform: translateX(-50%) scaleY(1.006) scaleX(1.001); }
+        }
+        @keyframes glowPulse {
+          0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
+          50% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); }
+        }
+        @keyframes particleDrift {
+          0%   { transform: translateX(-20px) translateY(0) scale(0); opacity: 0; }
+          10%  { opacity: 0.8; }
+          90%  { opacity: 0.8; }
+          100% { transform: translateX(calc(100vw)) translateY(-30px) scale(1); opacity: 0; }
+        }
+        .particle-drift {
+          animation-name: particleDrift;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        .knowledge-tag:hover {
+          transform: scale(1.15) !important;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          z-index: 50;
+        }
+      `}</style>
     </div>
   );
 }
