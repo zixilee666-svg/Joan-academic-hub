@@ -2281,6 +2281,25 @@ export async function onRequest(context) {
   // 初始化系统账户
   await initAdmin();
 
+  // ─── 自动播种 Zotero 文献（幂等，仅首次运行）───
+  try {
+    const seeded = await kvGet('system:zotero-seeded');
+    if (!seeded) {
+      console.log('[AutoSeed] Zotero seed not yet run — starting...');
+      const seedResult = await handleSeedZotero(request, JWT_SECRET, env);
+      // 标记已播种（无论成功与否，避免重复尝试）
+      await kvSet('system:zotero-seeded', 'true');
+      // GET 请求：种子完成后继续处理原有路由
+      if (request.method !== 'POST') {
+        console.log('[AutoSeed] Completed — continuing to route');
+      } else {
+        return seedResult;
+      }
+    }
+  } catch (e) {
+    console.error('[AutoSeed] Failed:', e.message || e);
+  }
+
   // 处理 CORS 预检请求
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: makeCorsHeaders(request) });
