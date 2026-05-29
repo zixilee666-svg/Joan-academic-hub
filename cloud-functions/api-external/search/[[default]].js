@@ -30,7 +30,7 @@ function corsHeaders(request) {
   };
 }
 
-const CLOUD_FN_VERSION = 'v4-cached-20260529';
+const CLOUD_FN_VERSION = 'v4.1-bodytext-20260529';
 
 function successJson(data, message = 'Success') {
   const body = { success: true, data, Message: message, _version: CLOUD_FN_VERSION };
@@ -281,7 +281,15 @@ export async function onRequest(context) {
     response = errorJson('Unknown search endpoint', 404);
   }
 
-  const headers = new Headers(response.headers);
-  Object.entries(corsHeaders(request)).forEach(([k, v]) => headers.set(k, v));
-  return new Response(response.body, { status: response.status, headers });
+  // v4.1: 先读取完整 body 文本再创建新 Response，避免流式传输中断导致的
+  // ERR_CONTENT_LENGTH_MISMATCH（Cloud Function 超时时 body 流被截断）
+  let bodyText;
+  try {
+    bodyText = await response.text();
+  } catch (_) {
+    bodyText = JSON.stringify({ success: false, data: [], Message: 'Response read error' });
+  }
+  const resHeaders = new Headers(response.headers);
+  Object.entries(corsHeaders(request)).forEach(([k, v]) => resHeaders.set(k, v));
+  return new Response(bodyText, { status: response.status, headers: resHeaders });
 }

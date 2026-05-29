@@ -125,6 +125,9 @@ export default function ImportExportPage() {
           { id: 's2', title: `Heterogeneous ${searchQuery} Detection via Attention Mechanism`, authors: ['Carol Williams', 'David Brown'], year: 2024, venue: 'KDD', abstract: `We propose a novel attention mechanism for ${searchQuery} detection...`, citations: 23, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
           { id: 's3', title: `Dynamic Graph Learning for ${searchQuery} Analysis`, authors: ['Eve Davis', 'Frank Miller'], year: 2023, venue: 'ICLR', abstract: `A temporal approach to ${searchQuery} using dynamic GNN...`, citations: 67, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
         ];
+        setSearchTotal(results.length);
+        setSearchOffset(0);
+        setHasMore(false);
         toast.info('外部 API 暂不可用，已为您展示演示数据');
       }
 
@@ -143,6 +146,9 @@ export default function ImportExportPage() {
         { id: 's3', title: `Dynamic Graph Learning for ${searchQuery} Analysis`, authors: ['Eve Davis', 'Frank Miller'], year: 2023, venue: 'ICLR', abstract: `A temporal approach to ${searchQuery} using dynamic GNN...`, citations: 67, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
       ];
       setSearchResults(fallbackResults);
+      setSearchTotal(fallbackResults.length);
+      setSearchOffset(0);
+      setHasMore(false);
 
       if (msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('限流') || msg.includes('频繁')) {
         toast.error('搜索频率受限（已展示演示数据），请等待 20-30 秒后重试');
@@ -210,16 +216,19 @@ export default function ImportExportPage() {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
     try {
-      const nextStart = searchOffset + searchResults.length;
+      const nextOffset = searchOffset + searchResults.length;
       let res: any;
       if (searchSource === 'arxiv') {
-        res = await api.searchArxiv(searchQuery, nextStart, 10);
+        res = await api.searchArxiv(searchQuery, nextOffset, 10);
       } else {
-        res = await api.searchSemanticScholar(searchQuery, nextStart, 10, settings.semanticScholarApiKey);
+        res = await api.searchSemanticScholar(searchQuery, nextOffset, 10, settings.semanticScholarApiKey);
       }
       const resultData = res.data as any;
+      // 优先使用 API 返回的实际 offset（确保分页连续），fallback 到 nextOffset
+      const actualOffset = resultData?.offset ?? nextOffset;
+      const actualLimit = resultData?.limit ?? 10;
       const newResults = (resultData?.data || []).map((p: any, i: number) => ({
-        id: p.id || `${searchSource === 'arxiv' ? 'arxiv' : 'ss'}-${nextStart + i}`,
+        id: p.id || `${searchSource === 'arxiv' ? 'arxiv' : 'ss'}-${actualOffset + i}`,
         title: p.title || '',
         authors: p.authors || [],
         year: p.year || 2024,
@@ -240,16 +249,30 @@ export default function ImportExportPage() {
         }),
       }));
       setSearchResults(prev => [...prev, ...newResults]);
-      setSearchOffset(nextStart);
+      setSearchOffset(actualOffset);
       if (resultData) {
-        setHasMore(!!resultData.next || (resultData.offset + resultData.limit < resultData.total));
+        setHasMore(!!resultData.next || (actualOffset + actualLimit < resultData.total));
       } else {
         setHasMore(newResults.length >= 10);
       }
-      toast.success(`已加载更多 ${newResults.length} 条结果`);
+      if (newResults.length > 0) {
+        toast.success(`已加载更多 ${newResults.length} 条结果`);
+      } else {
+        toast.info('没有更多结果了');
+        setHasMore(false);
+      }
     } catch (err: any) {
       console.error('[Import] Load more error:', err);
-      toast.error('加载更多失败，请重试');
+      // 降级：生成 Demo 数据补充
+      const demoOffset = searchOffset + searchResults.length;
+      const demoResults = [
+        { id: `demo-${demoOffset}`, title: `${searchQuery} 进阶研究：异构图方法`, authors: ['Demo Author 1', 'Demo Author 2'], year: 2024, venue: 'ICML', abstract: `Further exploration of ${searchQuery} using heterogeneous graph neural networks with multi-scale attention mechanisms...`, citations: 32, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
+        { id: `demo-${demoOffset + 1}`, title: `${searchQuery} 综述：最新进展与挑战`, authors: ['Demo Author 3', 'Demo Author 4'], year: 2025, venue: 'ACM CSUR', abstract: `A comprehensive survey of ${searchQuery} techniques, covering recent advances and open challenges in the field...`, citations: 18, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
+      ];
+      setSearchResults(prev => [...prev, ...demoResults]);
+      // 演示数据加载完后禁用「加载更多」
+      setHasMore(false);
+      toast.warning(`外部 API 加载失败（${err.message?.slice(0, 30) || '网络异常'}），已展示演示数据。请稍后重试`);
     } finally {
       setIsLoadingMore(false);
     }
