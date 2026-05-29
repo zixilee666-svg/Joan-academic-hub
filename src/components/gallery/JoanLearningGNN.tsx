@@ -28,7 +28,7 @@ const N:KnowledgeNode[]=[
   {id:'g4',label:'GIN',type:'gnn',orbitIndex:2,angleOffset:330,speed:0.48},
   {id:'d3',label:'Reddit',type:'dataset',orbitIndex:2,angleOffset:195,speed:0.52},
 ];
-const TC={gnn:{f:'#F4D03F',s:'#D4AC0D',t:'#4A4000',sh:'hex'as const},loss:{f:'#3498DB',s:'#2980B9',t:'#FFF',sh:'circle'as const},dataset:{f:'#2ECC71',s:'#27AE60',t:'#FFF',sh:'rect'as const},basic:{f:'#9B59B6',s:'#8E44AD',t:'#FFF',sh:'diamond'as const}};
+const TC={gnn:{f:'#4DA6FF',s:'#2178C7',t:'#FFF',sh:'hex'as const},loss:{f:'#FF7F50',s:'#E55B3B',t:'#FFF',sh:'circle'as const},dataset:{f:'#00C9A7',s:'#01A084',t:'#FFF',sh:'rect'as const},basic:{f:'#A78BFA',s:'#8B5CF6',t:'#FFF',sh:'diamond'as const}};
 const ORB=[{rx:200,ry:120},{rx:320,ry:185},{rx:470,ry:270}];
 const CY=260,OY=220;
 export default function J(){
@@ -61,13 +61,13 @@ export default function J(){
         <radialGradient id="ag"cx="50%"cy="50%"r="50%"><stop offset="0%"><animate attributeName="stop-color"values="#FFD700;#FFECB3;#FFD700"dur="4s"ri="indefinite"/><animate attributeName="stop-opacity"values=".28;.14;.28"dur="4s"ri="indefinite"/></stop><stop offset="100%"stopColor="transparent"sO="0"/></radialGradient>
         <linearGradient id="cg"x1="0%"y1="0%"x2="0%"y2="100%"><stop offset="0%"stopColor="#FFE566"/><stop offset="45%"stopColor="#FFD700"/><stop offset="100%"stopColor="#DAA520"/></linearGradient>
         <linearGradient id="gp"x1="0%"y1="0%"x2="100%"y2="100%"><stop offset="0%"stopColor="#9B59B6"/><stop offset="50%"stopColor="#7D3C98"/><stop offset="100%"stopColor="#5B2C6F"/></linearGradient>
-        {['gnn','loss','dataset','basic'].map(t=><filter key={'n'+t}id={'n'+t}x="-50%"y="-50%"w="200%"h="200%"><feGaussianBlur stdDeviation={t==='gnn'?5:4}r="b"/><feFlood floodColor={['#F4D03F','#3498DB','#2ECC71','#9B59B6'][['gnn','loss','ds','bas'].indexOf(t)]}fO=".45"r="c"/><feComposite in="c"in2="b"op="in"r="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>)}
+        {['gnn','loss','dataset','basic'].map(t=><filter key={'n'+t}id={'n'+t}x="-50%"y="-50%"w="200%"h="200%"><feGaussianBlur stdDeviation={t==='gnn'?6:5}r="b"/><feFlood floodColor={['#4DA6FF','#FF7F50','#00C9A7','#A78BFA'][['gnn','loss','ds','bas'].indexOf(t)]}fO=".5"r="c"/><feComposite in="c"in2="b"op="in"r="d"/><feMerge><feMergeNode in="d"/><feMergeNode in="SourceGraphic"/></feMerge></filter>)}
       </defs>
       {/* 圣光 */}
       <ellipse cx="600" cy={CY-18}rx="210"ry="250"fill="url(#ag)"/>
       {/* 轨道 */}
       {ORB.map((o,i)=><ellipse key={'o'+i}cx="600"cy={OY}rx={o.rx}ry={o.ry}fill="none"
-        stroke={['rgba(244,208,63,.22)','rgba(52,152,219,.16)','rgba(155,89,182,.13)'][i]}
+        stroke={['rgba(77,166,255,.25)','rgba(255,127,80,.18)','rgba(167,139,250,.15)'][i]}
         strokeWidth={[1.5,1,0.8][i]}strokeDasharray={[null,'8 4','4 6'][i]as unknown as undefined}/>)}
 
       {/* ===== 角色组 ===== */}
@@ -228,18 +228,18 @@ export default function J(){
         </g></g>
 
       {/* 知识节点 */}
-      {N.map(n=>{const t=n.type,c=TC[t]||TC.gnn,sz=[20,17,15][n.orbitIndex],fsz=[11,10,9][n.orbitIndex],fid='ng-'+t;
+      {N.map(n=>{const t=n.type,c=TC[t]||TC.gnn,sz=[34,28,24][n.orbitIndex],fsz=[15,13,12][n.orbitIndex],fid='ng-'+t;
         const orb=ORB[n.orbitIndex],rad=(n.angleOffset*Math.PI)/180,sx=600+orb.rx*Math.cos(rad),sy=OY+orb.ry*Math.sin(rad);
         return(<g key={n.id}data-orbit-node data-oi={n.orbitIndex}data-angle-offset={n.angleOffset}data-speed={n.speed}
           transform={'translate('+sx+','+sy+')'}className="kn"onMouseEnter()=>setHv(n.id)}onMouseLeave(()=>setHv(null))
           onClick={()=>{const l=NODE_LINKS[n.label];if(l)nav(l);}}style={{cursor:'pointer'}}>
           <g filter={'url(#'+fid)}>{sh(t,sz)}</g><g>{sh(t,sz)}</g>
-          <g fill="none"stroke={c.s}strokeWidth="1.2">{sh(t,sz)}</g>
+          <g fill="none"stroke={c.s}strokeWidth="1.8">{sh(t,sz)}</g>
           <text textAnchor="middle"dominantBaseline="central"fill={c.t}fontSize={fsz}fontWeight="bold"fontFamily="'Inter','Noto Sans SC',sans-serif"pointerEvents="none"y={t==='rect'?1:0}>
             {n.label.length>10?(n.labelCn||n.label):n.label}</text>
-          {hv===n.id&&<g transform={'translate(0,'+(-sz-18)+')'}><rect x={-57}y="-17"w="114"h="23"rx="4.5"fill="rgba(20,20,30,.93)"stroke={c.f}strokeWidth="1"/>
-            <text textAnchor="middle"y="1"fill="white"fontSize="10.5"fontFamily="'Inter',sans-serif">{n.labelCn?n.labelCn+'('+n.label+')':n.label}</text>
-            <polygon points="-5,7 5,7 0,13"fill="rgba(20,20,30,.93)"/></g>}
+          {hv===n.id&&<g transform={'translate(0,'+(-sz-22)+')'}><rect x={-65}y="-19"w="130"h="26"rx="5"fill="rgba(20,20,30,.93)"stroke={c.f}strokeWidth="1.2"/>
+            <text textAnchor="middle"y="2"fill="white"fontSize="12"fontFamily="'Inter',sans-serif"fontWeight="500">{n.labelCn?n.labelCn+'('+n.label+')':n.label}</text>
+            <polygon points="-5,8 5,8 0,15"fill="rgba(20,20,30,.93)"/></g>}
         </g>)})}
 
       {/* 粒子 */}
@@ -267,6 +267,6 @@ export default function J(){
         <text textAnchor="middle"y="17"fill="#999"fontSize="10"fontFamily="'Noto Sans SC',sans-serif"opacity=".5">圣女贞德 · 学术守护者</text>
       </g>
     </svg>
-    <style>{'.kn{transition:filter .3s ease}.kn:hover{filter:brightness(1.3)drop-shadow(0 0 8px rgba(255,215,0,.4))}@media(prefers-reduced-motion:reduce){.kn,[data-orbit-node]{animation:none!important;transition:none!important}}</style>
+    <style>{`.kn{transition:transform .25s ease,filter .3s ease}.kn:hover{transform:scale(1.15);filter:brightness(1.2) drop-shadow(0 0 12px rgba(255,215,0,.5))}@media(prefers-reduced-motion:reduce){.kn,[data-orbit-node]{animation:none!important;transition:none!important}}</style>
   </div>);
 }
