@@ -40,6 +40,11 @@ export default function ImportExportPage() {
   const [aiParsing, setAiParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ParsedPaperResult | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Pagination state
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Search handlers — uses API
   const settings = useSettingsStore();
@@ -49,12 +54,26 @@ export default function ImportExportPage() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     setSearchResults([]);
+    setSearchTotal(0);
+    setSearchOffset(0);
+    setHasMore(false);
 
     try {
       let results: any[] = [];
       if (searchSource === 'arxiv') {
-        const res = await api.searchArxiv(searchQuery);
-        results = (res.data || []).map((p: any, i: number) => ({
+        const res = await api.searchArxiv(searchQuery, 0, 10);
+        const resultData = res.data as any;
+        if (resultData && resultData.data && Array.isArray(resultData.data)) {
+          // New paginated structure
+          results = resultData.data;
+          setSearchTotal(resultData.total || results.length);
+          setSearchOffset(resultData.offset || 0);
+          setHasMore(resultData.offset + resultData.limit < resultData.total);
+        } else if (Array.isArray(resultData)) {
+          // Backward compat: old flat array
+          results = resultData;
+        }
+        results = results.map((p: any, i: number) => ({
           id: p.id || `arxiv-${i}`,
           title: p.title || '',
           authors: p.authors || [],
@@ -65,10 +84,23 @@ export default function ImportExportPage() {
           source: 'arXiv',
           doi: p.doi,
           url: p.url || p.id,
+          pdfUrl: p.pdfUrl || '',
+          primaryCategory: p.primaryCategory || '',
         }));
       } else {
-        const res = await api.searchSemanticScholar(searchQuery, 0, settings.semanticScholarApiKey);
-        results = (res.data || []).map((p: any, i: number) => ({
+        const res = await api.searchSemanticScholar(searchQuery, 0, 10, settings.semanticScholarApiKey);
+        const resultData = res.data as any;
+        if (resultData && resultData.data && Array.isArray(resultData.data)) {
+          // New paginated structure
+          results = resultData.data;
+          setSearchTotal(resultData.total || results.length);
+          setSearchOffset(resultData.offset || 0);
+          setHasMore(!!resultData.next || (resultData.offset + resultData.limit < resultData.total));
+        } else if (Array.isArray(resultData)) {
+          // Backward compat
+          results = resultData;
+        }
+        results = results.map((p: any, i: number) => ({
           id: p.id || `ss-${i}`,
           title: p.title || '',
           authors: p.authors || [],
@@ -79,6 +111,10 @@ export default function ImportExportPage() {
           source: 'Semantic Scholar',
           doi: p.doi,
           url: p.url,
+          tldr: p.tldr || '',
+          openAccessPdf: p.openAccessPdf || '',
+          isOpenAccess: p.isOpenAccess || false,
+          influentialCitations: p.influentialCitations || 0,
         }));
       }
 
@@ -91,7 +127,7 @@ export default function ImportExportPage() {
       }
 
       setSearchResults(results);
-      toast.success(`找到 ${results.length} 条结果`);
+      toast.success(`找到 ${searchTotal > 0 ? searchTotal : results.length} 条结果`);
     } catch (err: any) {
       console.error('[Import] Search error:', err);
       const msg = err.message || '';
@@ -105,7 +141,7 @@ export default function ImportExportPage() {
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, searchSource]);
+  }, [searchQuery, searchSource, settings.semanticScholarApiKey]);
 
   const handleZoteroImport = useCallback(async () => {
     if (!settings.zoteroUserId || !settings.zoteroApiKey) {
@@ -155,6 +191,56 @@ export default function ImportExportPage() {
       setIsSearching(false);
     }
   }, [settings.zoteroUserId, settings.zoteroApiKey]);
+
+  // Load more results (pagination)
+  const handleLoadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextStart = searchOffset + searchResults.length;
+      let res: any;
+      if (searchSource === 'arxiv') {
+        res = await api.searchArxiv(searchQuery, nextStart, 10);
+      } else {
+        res = await api.searchSemanticScholar(searchQuery, nextStart, 10, settings.semanticScholarApiKey);
+      }
+      const resultData = res.data as any;
+      const newResults = (resultData?.data || []).map((p: any, i: number) => ({
+        id: p.id || `${searchSource === 'arxiv' ? 'arxiv' : 'ss'}-${nextStart + i}`,
+        title: p.title || '',
+        authors: p.authors || [],
+        year: p.year || 2024,
+        venue: p.venue || (searchSource === 'arxiv' ? 'arXiv' : ''),
+        abstract: p.abstract || (searchSource === 'arxiv' ? p.summary : '') || '',
+        citations: p.citations || 0,
+        source: searchSource === 'arxiv' ? 'arXiv' : 'Semantic Scholar',
+        doi: p.doi || '',
+        url: p.url || p.id,
+        ...(searchSource === 'arxiv' ? {
+          pdfUrl: p.pdfUrl || '',
+          primaryCategory: p.primaryCategory || '',
+        } : {
+          tldr: p.tldr || '',
+          openAccessPdf: p.openAccessPdf || '',
+          isOpenAccess: p.isOpenAccess || false,
+          influentialCitations: p.influentialCitations || 0,
+        }),
+      }));
+      setSearchResults(prev => [...prev, ...newResults]);
+      setSearchOffset(nextStart);
+      if (resultData) {
+        setHasMore(!!resultData.next || (resultData.offset + resultData.limit < resultData.total));
+      } else {
+        setHasMore(newResults.length >= 10);
+      }
+      toast.success(`已加载更多 ${newResults.length} 条结果`);
+    } catch (err: any) {
+      console.error('[Import] Load more error:', err);
+      toast.error('加载更多失败，请重试');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore, searchOffset, searchResults.length, searchSource, searchQuery, settings.semanticScholarApiKey]);
 
   // Import from search results — uses API
   const importFromSearch = useCallback(async (paper: any) => {
@@ -557,7 +643,7 @@ export default function ImportExportPage() {
                 {searchResults.length > 0 && !isSearching && (
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      找到 {searchResults.length} 条结果
+                      找到 {searchTotal > 0 ? `${searchResults.length} / ${searchTotal}` : searchResults.length} 条结果
                     </p>
                     {searchResults.map((paper, i) => (
                       <motion.div
@@ -575,14 +661,34 @@ export default function ImportExportPage() {
                           <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
                             {paper.abstract}
                           </p>
-                          <div className="mt-2 flex items-center gap-2">
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
                             <Badge variant="secondary" className="text-[10px]">
                               {paper.citations} 引用
                             </Badge>
+                            {paper.influentialCitations > 0 && (
+                              <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                                {paper.influentialCitations} 高影响力引用
+                              </Badge>
+                            )}
+                            {paper.isOpenAccess && (
+                              <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                开放获取
+                              </Badge>
+                            )}
+                            {paper.primaryCategory && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {paper.primaryCategory}
+                              </Badge>
+                            )}
                             <Badge variant="outline" className="text-[10px]">
                               {paper.source}
                             </Badge>
                           </div>
+                          {paper.tldr && (
+                            <p className="mt-1.5 text-xs text-muted-foreground italic line-clamp-1">
+                              TL;DR: {paper.tldr}
+                            </p>
+                          )}
                         </div>
                         <Button
                           size="sm"
@@ -598,6 +704,24 @@ export default function ImportExportPage() {
                         </Button>
                       </motion.div>
                     ))}
+                    {hasMore && searchResults.length > 0 && (
+                      <div className="pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleLoadMore}
+                          disabled={isLoadingMore}
+                          className="w-full gap-2"
+                        >
+                          {isLoadingMore ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : null}
+                          {isLoadingMore
+                            ? '加载中...'
+                            : `加载更多 (还有 ${searchTotal - searchResults.length} 条)`}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>

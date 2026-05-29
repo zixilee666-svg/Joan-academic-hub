@@ -537,6 +537,114 @@ function setMockPassword(username: string, password: string): void {
   } catch { /* localStorage 不可用时静默忽略 */ }
 }
 
+// ---- Mock 搜索结果生成器 ----
+function generateMockSearchResults(query: string, source: 'arxiv' | 'semantic', count: number): any[] {
+  const q = query || 'graph neural network';
+  const templates = [
+    {
+      titleFn: (idx: number) => `A Comprehensive Study of ${q} Using Graph Neural Networks`,
+      venue: source === 'arxiv' ? 'arXiv' : 'NeurIPS',
+      authors: ['Alice Chen', 'Bob Zhang', 'Carol Wang'],
+      year: 2025,
+      citations: 142,
+      abstractFn: (idx: number) => `This paper presents a comprehensive study of applying graph neural networks to ${q}. We propose a novel framework that leverages heterogeneous attention mechanisms to capture complex relational patterns. Experimental results on multiple benchmark datasets demonstrate state-of-the-art performance.`,
+    },
+    {
+      titleFn: (idx: number) => `Heterogeneous ${q} Detection via Multi-Scale Attention`,
+      venue: source === 'arxiv' ? 'arXiv' : 'KDD',
+      authors: ['David Liu', 'Eve Kim', 'Frank Wu'],
+      year: 2025,
+      citations: 89,
+      abstractFn: (idx: number) => `We propose a heterogeneous graph attention network for ${q} detection. Our model incorporates multi-scale neighborhood aggregation and cross-type message passing to effectively handle diverse node and edge types. Extensive experiments validate the effectiveness of our approach.`,
+    },
+    {
+      titleFn: (idx: number) => `Temporal Dynamics in ${q}: A Graph-Based Approach`,
+      venue: source === 'arxiv' ? 'arXiv' : 'ICLR',
+      authors: ['Grace Park', 'Henry Li', 'Iris Zhao'],
+      year: 2024,
+      citations: 67,
+      abstractFn: (idx: number) => `This work explores temporal dynamics in ${q} using dynamic graph neural networks. We introduce a temporal attention mechanism that adaptively weighs historical information based on relevance to current predictions. The proposed method achieves significant improvements on real-world datasets.`,
+    },
+    {
+      titleFn: (idx: number) => `Self-Supervised Learning for ${q} Representation`,
+      venue: source === 'arxiv' ? 'arXiv' : 'ICML',
+      authors: ['Jack Yang', 'Kelly Sun', 'Leo Huang'],
+      year: 2024,
+      citations: 53,
+      abstractFn: (idx: number) => `We present a self-supervised learning framework for learning robust representations in ${q} tasks. By designing a novel contrastive objective that preserves both structural and semantic information, our method achieves competitive performance without requiring labeled data.`,
+    },
+    {
+      titleFn: (idx: number) => `A Survey of Deep Learning Methods for ${q}`,
+      venue: source === 'arxiv' ? 'arXiv' : 'IEEE TPAMI',
+      authors: ['Mike Zhou', 'Nina Xu', 'Oliver Ma'],
+      year: 2024,
+      citations: 210,
+      abstractFn: (idx: number) => `This survey provides a comprehensive overview of deep learning approaches for ${q}. We categorize existing methods into supervised, semi-supervised, and unsupervised paradigms, and discuss their strengths, weaknesses, and application scenarios.`,
+    },
+    {
+      titleFn: (idx: number) => `Adversarial Robustness in ${q} Graph Models`,
+      venue: source === 'arxiv' ? 'arXiv' : 'AAAI',
+      authors: ['Patty He', 'Quinn Lin', 'Ray Tang'],
+      year: 2024,
+      citations: 38,
+      abstractFn: (idx: number) => `We investigate the adversarial robustness of graph neural networks in ${q} scenarios. Through systematic perturbation analysis, we identify key vulnerabilities and propose defense mechanisms that enhance model reliability under adversarial conditions.`,
+    },
+    {
+      titleFn: (idx: number) => `Contrastive Graph Learning for Enhanced ${q} Analysis`,
+      venue: source === 'arxiv' ? 'arXiv' : 'WWW',
+      authors: ['Sara Deng', 'Tom Shi', 'Uma Patel'],
+      year: 2023,
+      citations: 95,
+      abstractFn: (idx: number) => `This paper introduces a contrastive graph learning paradigm for ${q} analysis. By maximizing mutual information between local and global graph representations, our model learns expressive node embeddings that capture both fine-grained and holistic graph properties.`,
+    },
+    {
+      titleFn: (idx: number) => `Large-Scale ${q} Mining with Efficient Graph Sampling`,
+      venue: source === 'arxiv' ? 'arXiv' : 'VLDB',
+      authors: ['Vic Rong', 'Wendy Jiang', 'Xiao He'],
+      year: 2023,
+      citations: 72,
+      abstractFn: (idx: number) => `We address the scalability challenge in large-scale ${q} mining by proposing an efficient graph sampling strategy. Our method selectively samples informative subgraphs, significantly reducing computational cost while maintaining high detection accuracy.`,
+    },
+  ];
+
+  const results = [];
+  const topics = ['Fraud Detection', 'Anomaly Detection', 'Recommendation', 'Classification', 'Link Prediction'];
+  const subtopics = ['Attention Mechanism', 'Message Passing', 'Graph Convolution', 'Temporal Modeling', 'Self-Supervision'];
+
+  for (let i = 0; i < count; i++) {
+    const tmpl = templates[i % templates.length];
+    const extraTags = i === 0 ? ['OA', 'TopCited'] : i === 1 ? ['OA'] : [];
+    results.push({
+      id: source === 'arxiv'
+        ? `${String(2101 + Math.floor(i / 6)).padStart(2, '0')}.${String(10001 + i * 137).padStart(2, '0')}`
+        : `paper-ss-${1000 + i}`,
+      title: tmpl.titleFn(i),
+      authors: i >= templates.length
+        ? [...tmpl.authors.slice(0, -1), `Author ${i}`]
+        : tmpl.authors,
+      year: tmpl.year - (i >= templates.length * 2 ? 1 : 0),
+      venue: tmpl.venue,
+      abstract: tmpl.abstractFn(i),
+      doi: `10.1234/mock.2025.${String(1000 + i).padStart(4, '0')}`,
+      url: source === 'arxiv' ? `https://arxiv.org/abs/${String(2101 + i).padStart(2, '0')}.${String(10001 + i * 137).padStart(2, '0')}` : `https://api.semanticscholar.org/${i}`,
+      citations: tmpl.citations - (i * 7) + (i * 3),
+      ...(source === 'semantic' ? {
+        influentialCitations: Math.floor((tmpl.citations - i * 7) * 0.3),
+        tldr: `This paper introduces a novel approach for ${q} using graph-based deep learning techniques with state-of-the-art results.`,
+        openAccessPdf: i < 4 ? `https://arxiv.org/pdf/${String(2101 + i).padStart(2, '0')}.${String(10001 + i * 137).padStart(2, '0')}.pdf` : '',
+        isOpenAccess: i < 4,
+        publicationTypes: ['JournalArticle'],
+      } : {}),
+      ...(source === 'arxiv' ? {
+        primaryCategory: ['cs.LG', 'cs.AI', 'cs.SI', 'stat.ML'][i % 4],
+        pdfUrl: `https://arxiv.org/pdf/${String(2101 + i).padStart(2, '0')}.${String(10001 + i * 137).padStart(2, '0')}`,
+        updated: new Date(2025, 0, 15 - i).toISOString(),
+      } : {}),
+    });
+  }
+  return results;
+}
+
 // ---- Mock 请求处理器 ----
 function handleMockRequest(path: string, method: string, body?: any): any {
   // Auth
@@ -829,12 +937,25 @@ function handleMockRequest(path: string, method: string, body?: any): any {
     return { success: true };
   }
 
-  // Search (Mock: return empty)
+  // Search (Mock: dynamic data based on query)
   if (path.includes('/search/arxiv') && method === 'GET') {
-    return { success: true, data: [] };
+    const paramStr = path.includes('?') ? path.split('?')[1] : '';
+    const params = new URLSearchParams(paramStr);
+    const query = params.get('query') || '';
+    const maxResults = parseInt(params.get('max_results') || '10', 10);
+    const start = parseInt(params.get('start') || '0', 10);
+    const data = generateMockSearchResults(query, 'arxiv', maxResults);
+    return { success: true, data: { data, total: 45, offset: start, limit: maxResults } };
   }
   if (path.includes('/search/semantic-scholar') && method === 'GET') {
-    return { success: true, data: [] };
+    const paramStr = path.includes('?') ? path.split('?')[1] : '';
+    const params = new URLSearchParams(paramStr);
+    const query = params.get('query') || '';
+    const limit = parseInt(params.get('limit') || '10', 10);
+    const offset = parseInt(params.get('offset') || '0', 10);
+    const data = generateMockSearchResults(query, 'semantic', limit);
+    const nextOffset = offset + limit < 45 ? offset + limit : null;
+    return { success: true, data: { data, total: 45, offset, limit, next: nextOffset } };
   }
   if (path === '/search/import' && method === 'POST') {
     return { success: true, data: body };
@@ -1411,18 +1532,19 @@ class ApiClient {
   }
 
   // ---- Search ----
-  async searchArxiv(query: string, start = 0) {
-    return this.request<{ success: boolean; data: any[] }>(
-      `/search/arxiv?query=${encodeURIComponent(query)}&start=${start}`
+  async searchArxiv(query: string, start = 0, maxResults = 10) {
+    return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number } }>(
+      `/search/arxiv?query=${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`
     );
   }
 
-  async searchSemanticScholar(query: string, offset = 0, apiKey?: string) {
+  async searchSemanticScholar(query: string, offset = 0, limit = 10, apiKey?: string) {
     const qs = new URLSearchParams();
     qs.set('query', query);
     qs.set('offset', String(offset));
+    qs.set('limit', String(limit));
     if (apiKey) qs.set('apiKey', apiKey);
-    return this.request<{ success: boolean; data: any[] }>(
+    return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number; next: number | null } }>(
       `/search/semantic-scholar?${qs.toString()}`
     );
   }

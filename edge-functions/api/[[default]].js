@@ -2507,13 +2507,35 @@ export async function onRequest(context) {
   async function handleSearchArxiv(request) {
     const url = new URL(request.url);
     const query = url.searchParams.get('query') || '';
-    if (!query.trim()) return success([], 'Empty query', request);
+    if (!query.trim()) return success({ data: [], total: 0, offset: 0, limit: 0 }, 'Empty query', request);
+
+    const start = parseInt(url.searchParams.get('start') || '0', 10);
+    const maxResults = Math.min(parseInt(url.searchParams.get('max_results') || '10', 10), 50);
+
+    // Check ARXIV_CACHE
+    const cacheKey = `${query.toLowerCase().trim()}_${start}_${maxResults}`;
+    const cached = ARXIV_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return success(cached.data, 'Success (cached)', request);
+    }
 
     try {
-      const arxivUrl = `http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=10`;
-      const res = await fetch(arxivUrl, { method: 'GET' });
+      const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`;
+      const res = await fetch(arxivUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': 'AcademicHub/1.0 (mailto:research@academichub.local)' },
+      });
+      if (!res.ok) {
+        console.error('[SearchArxiv] HTTP error:', res.status);
+        return success({ data: [], total: 0, offset: start, limit: maxResults }, 'arXiv API error', request);
+      }
       const xml = await res.text();
 
+      // Parse totalResults
+      const totalMatch = xml.match(/<opensearch:totalResults>(\d+)<\/opensearch:totalResults>/);
+      const total = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+
+      // Parse entries
       const entries = [];
       const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
       let match;
@@ -2522,9 +2544,18 @@ export async function onRequest(context) {
         const title = (entry.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.replace(/\s+/g, ' ').trim() || '';
         const id = (entry.match(/<id>([\s\S]*?)<\/id>/) || [])[1]?.trim() || '';
         const published = (entry.match(/<published>([\s\S]*?)<\/published>/) || [])[1]?.trim() || '';
-        const summary = (entry.match(/<summary>([\s\S]*?)<\/summary>/) || [])[1]?.trim() || '';
+        const updated = (entry.match(/<updated>([\s\S]*?)<\/updated>/) || [])[1]?.trim() || '';
+        const summary = (entry.match(/<summary>([\s\S]*?)<\/summary>/) || [])[1]?.replace(/\s+/g, ' ').trim() || '';
         const doiMatch = entry.match(/<arxiv:doi>([\s\S]*?)<\/arxiv:doi>/);
         const doi = doiMatch ? doiMatch[1].trim() : '';
+
+        // Parse primary category
+        const catMatch = entry.match(/<arxiv:primary_category[^>]*term="([^"]+)"/);
+        const primaryCategory = catMatch ? catMatch[1] : '';
+
+        // Parse link for PDF
+        const pdfMatch = entry.match(/<link[^>]*title="pdf"[^>]*href="([^"]+)"/);
+        const pdfUrl = pdfMatch ? pdfMatch[1] : '';
 
         const authors = [];
         const authorRegex = /<name>([\s\S]*?)<\/name>/g;
@@ -2542,13 +2573,19 @@ export async function onRequest(context) {
           abstract: summary,
           doi,
           url: id,
+          pdfUrl,
+          primaryCategory,
+          updated,
           citations: 0,
         });
       }
-      return success(entries, 'Success', request);
+
+      const result = { data: entries, total, offset: start, limit: maxResults };
+      ARXIV_CACHE.set(cacheKey, { data: result, ts: Date.now() });
+      return success(result, 'Success', request);
     } catch (e) {
       console.error('[SearchArxiv] Error:', e);
-      return success([], 'Search failed', request);
+      return success({ data: [], total: 0, offset: start, limit: maxResults }, 'Search failed', request);
     }
   }
 
@@ -2560,24 +2597,35 @@ export async function onRequest(context) {
   async function handleSearchSemanticScholar(request) {
     const url = new URL(request.url);
     const query = url.searchParams.get('query') || '';
-    if (!query.trim()) return success([], 'Empty query', request);
+    if (!query.trim()) return success({ data: [], total: 0, offset: 0, limit: 0, next: null }, 'Empty query', request);
+
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '10', 10), 100);
+    const apiKey = url.searchParams.get('apiKey');
 
     // Check cache
-    const cacheKey = query.toLowerCase().trim();
+    const cacheKey = `${query.toLowerCase().trim()}_${offset}_${limit}`;
     const cached = ssCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
       return success(cached.data, 'Success (cached)', request);
     }
 
     try {
-      const apiKey = url.searchParams.get('apiKey');
-      const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=title,authors,year,venue,abstract,citationCount,externalIds,url&limit=10`;
+      const fields = [
+        'title', 'authors', 'year', 'venue', 'abstract',
+        'citationCount', 'influentialCitationCount', 'externalIds',
+        'url', 'openAccessPdf', 'isOpenAccess', 'tldr', 'publicationTypes',
+      ].join(',');
+      const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=${limit}&offset=${offset}`;
       const headers = { 'Accept': 'application/json' };
       if (apiKey) headers['x-api-key'] = apiKey;
       const res = await fetch(ssUrl, { method: 'GET', headers });
       if (!res.ok) {
         const errText = await res.text();
         console.error('[SearchSS] API error:', res.status, errText);
+        if (res.status === 429) {
+          return apiError('请求过于频繁，请等待 10-20 秒后重试', 429, 'RATE_LIMITED', request);
+        }
         return apiError(`Semantic Scholar API 暂时不可用 (${res.status})，请稍等后重试`, 502, 'EXTERNAL_API_ERROR', request);
       }
       const data = await res.json();
@@ -2589,14 +2637,22 @@ export async function onRequest(context) {
         venue: p.venue || '',
         abstract: p.abstract || '',
         doi: p.externalIds?.DOI || '',
+        arxivId: p.externalIds?.ArXiv || '',
         url: p.url || '',
         citations: p.citationCount || 0,
+        influentialCitations: p.influentialCitationCount || 0,
+        tldr: p.tldr?.text || '',
+        openAccessPdf: p.openAccessPdf?.url || '',
+        isOpenAccess: p.isOpenAccess || false,
+        publicationTypes: p.publicationTypes || [],
       }));
-      ssCache.set(cacheKey, { data: papers, ts: Date.now() });
-      return success(papers, 'Success', request);
+      const nextOffset = data.next || null;
+      const result = { data: papers, total: data.total || papers.length, offset, limit, next: nextOffset };
+      ssCache.set(cacheKey, { data: result, ts: Date.now() });
+      return success(result, 'Success', request);
     } catch (e) {
       console.error('[SearchSS] Error:', e);
-      return success([], 'Search failed', request);
+      return success({ data: [], total: 0, offset, limit, next: null }, 'Search failed', request);
     }
   }
 
