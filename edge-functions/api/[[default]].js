@@ -2786,8 +2786,14 @@ export async function onRequest(context) {
   // 搜索路由
   // ========================================
   if (segments[0] === 'search') {
-    if (segments[1] === 'arxiv' && request.method === 'GET') return handleSearchArxiv(request);
-    if (segments[1] === 'semantic-scholar' && request.method === 'GET') return handleSearchSemanticScholar(request);
+    // Cloud Function 处理 arxiv/semantic-scholar 搜索
+    // Edge Function (V8 isolate) 无法访问外部网络
+    if (segments[1] === 'arxiv' && request.method === 'GET') {
+      // Pass-through: Cloud Function cloud-functions/api/search/[[default]].js 接管
+    }
+    if (segments[1] === 'semantic-scholar' && request.method === 'GET') {
+      // Pass-through: Cloud Function cloud-functions/api/search/[[default]].js 接管
+    }
     if (segments[1] === 'import' && request.method === 'POST') {
       return handleImportFromSearch(request, JWT_SECRET);
     }
