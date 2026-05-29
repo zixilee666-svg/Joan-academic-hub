@@ -131,6 +131,8 @@ export default function ImportExportPage() {
         toast.info('外部 API 暂不可用，已为您展示演示数据');
       }
 
+      // 按引用量降序排序
+      results.sort((a, b) => (b.citations || 0) - (a.citations || 0));
       setSearchResults(results);
       if (searchTotal > 0) {
         toast.success(`找到 ${searchTotal} 条结果`);
@@ -145,7 +147,7 @@ export default function ImportExportPage() {
         { id: 's2', title: `Heterogeneous ${searchQuery} Detection via Attention Mechanism`, authors: ['Carol Williams', 'David Brown'], year: 2024, venue: 'KDD', abstract: `We propose a novel attention mechanism for ${searchQuery} detection...`, citations: 23, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
         { id: 's3', title: `Dynamic Graph Learning for ${searchQuery} Analysis`, authors: ['Eve Davis', 'Frank Miller'], year: 2023, venue: 'ICLR', abstract: `A temporal approach to ${searchQuery} using dynamic GNN...`, citations: 67, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
       ];
-      setSearchResults(fallbackResults);
+      setSearchResults([...fallbackResults].sort((a, b) => (b.citations || 0) - (a.citations || 0)));
       setSearchTotal(fallbackResults.length);
       setSearchOffset(0);
       setHasMore(false);
@@ -248,7 +250,7 @@ export default function ImportExportPage() {
           influentialCitations: p.influentialCitations || 0,
         }),
       }));
-      setSearchResults(prev => [...prev, ...newResults]);
+      setSearchResults(prev => [...prev, ...newResults].sort((a, b) => (b.citations || 0) - (a.citations || 0)));
       setSearchOffset(actualOffset);
       if (resultData) {
         setHasMore(!!resultData.next || (actualOffset + actualLimit < resultData.total));
@@ -269,7 +271,7 @@ export default function ImportExportPage() {
         { id: `demo-${demoOffset}`, title: `${searchQuery} 进阶研究：异构图方法`, authors: ['Demo Author 1', 'Demo Author 2'], year: 2024, venue: 'ICML', abstract: `Further exploration of ${searchQuery} using heterogeneous graph neural networks with multi-scale attention mechanisms...`, citations: 32, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
         { id: `demo-${demoOffset + 1}`, title: `${searchQuery} 综述：最新进展与挑战`, authors: ['Demo Author 3', 'Demo Author 4'], year: 2025, venue: 'ACM CSUR', abstract: `A comprehensive survey of ${searchQuery} techniques, covering recent advances and open challenges in the field...`, citations: 18, source: searchSource === 'arxiv' ? 'arXiv (Demo)' : 'Semantic Scholar (Demo)', _isDemo: true },
       ];
-      setSearchResults(prev => [...prev, ...demoResults]);
+      setSearchResults(prev => [...prev, ...demoResults].sort((a, b) => (b.citations || 0) - (a.citations || 0)));
       // 演示数据加载完后禁用「加载更多」
       setHasMore(false);
       toast.warning(`外部 API 加载失败（${err.message?.slice(0, 30) || '网络异常'}），已展示演示数据。请稍后重试`);
