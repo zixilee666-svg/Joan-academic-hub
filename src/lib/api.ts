@@ -1212,7 +1212,10 @@ class ApiClient {
       const timeoutMs = config.timeout ?? 30000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const response = await fetch(`${this.baseUrl}${config.path}`, {
+      const url = config.path.startsWith('/api-external/')
+        ? config.path
+        : `${this.baseUrl}${config.path}`;
+      const response = await fetch(url, {
         ...options,
         headers,
         signal: controller.signal,
@@ -1534,7 +1537,7 @@ class ApiClient {
   // ---- Search ----
   async searchArxiv(query: string, start = 0, maxResults = 10) {
     return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number } }>(
-      `/search/arxiv?query=${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`
+      `/api-external/search/arxiv?query=${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`
     );
   }
 
@@ -1545,7 +1548,7 @@ class ApiClient {
     qs.set('limit', String(limit));
     if (apiKey) qs.set('apiKey', apiKey);
     return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number; next: number | null } }>(
-      `/search/semantic-scholar?${qs.toString()}`
+      `/api-external/search/semantic-scholar?${qs.toString()}`
     );
   }
 

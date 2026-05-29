@@ -12,7 +12,7 @@
   "edgeFunctions": {
     "routes": [
       {
-        "src": "^/api/((?!search/).*)$",
+        "src": "/api/(.*)",
         "dest": "/api/[[default]].js"
       }
     ]

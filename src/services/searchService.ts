@@ -17,7 +17,7 @@ export interface SearchResult {
 export const searchService = {
   arxiv: (query: string, start?: number) => {
     const params = new URLSearchParams({ query, ...(start ? { start: String(start) } : {}) });
-    return apiClient.get<SearchResult[]>(`/search/arxiv?${params}`);
+    return apiClient.get<SearchResult[]>(`/api-external/search/arxiv?${params}`);
   },
 
   crossref: (query: string, rows?: number) => {
