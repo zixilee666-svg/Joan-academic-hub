@@ -20,8 +20,7 @@
   "envVariables": {
     "JWT_SECRET": "your-jwt-secret-key-min-32-chars",
     "KV_STORAGE_ID": "your-kv-storage-id",
-    "CLOUD_FUNCTION_TOKEN": "your-cloud-function-token",
-    "SEED_TOKEN": "joan-zotero-seed-2026"
+    "CLOUD_FUNCTION_TOKEN": "your-cloud-function-token"
   },
   "site": {
     "icp": {
