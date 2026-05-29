@@ -1,9 +1,15 @@
 /**
- * Cloud Function: Academic Search Proxy
+ * Cloud Function: Academic Search Proxy (v4-cached)
  *
  * 为什么用 Cloud Function 而不用 Edge Function？
  * - Edge Function (V8 isolate) 无法访问外部网络（fetch 外部域名会 net_exception_timeout）
  * - Cloud Function (Node.js) 可以正常访问外部 API
+ *
+ * v4 改进：
+ * - 内存缓存层（Map + TTL），同 query 避免重复请求外部 API
+ * - arXiv 超时增至 45s（国内访问极慢）
+ * - Semantic Scholar 429 指数退避 max 32s（4 retries）
+ * - 缓存命中时返回 _cached: true 标记
  *
  * 路由：
  *   GET /api-external/search/arxiv?query=...&start=...&max_results=...
@@ -24,7 +30,7 @@ function corsHeaders(request) {
   };
 }
 
-const CLOUD_FN_VERSION = 'v3-retry-20260529'; // 重试版
+const CLOUD_FN_VERSION = 'v4-cached-20260529';
 
 function successJson(data, message = 'Success') {
   const body = { success: true, data, Message: message, _version: CLOUD_FN_VERSION };
@@ -42,58 +48,65 @@ function errorJson(message, status = 502) {
   });
 }
 
-/** 安全 AbortSignal：兼容 EdgeOne 可能不支持的 AbortSignal.timeout */
 function safeTimeoutSignal(ms) {
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
     return AbortSignal.timeout(ms);
   }
   const controller = new AbortController();
-  setTimeout(() => {
-    try { controller.abort(); } catch (_) { /* ignore */ }
-  }, ms);
+  setTimeout(() => { try { controller.abort(); } catch (_) {} }, ms);
   return controller.signal;
 }
 
-/** 延迟工具函数 */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ============================================================
-// 通用 fetch + 重试（处理 429 限流 + 5xx 服务端错误）
+// 内存缓存层 (warm instance 持久化，冷启动丢失但无妨)
 // ============================================================
-async function fetchWithRetry(url, options, maxRetries = 2) {
+const _cache = new Map();
+const CACHE_TTL = {
+  arxiv: 24 * 60 * 60 * 1000,         // arXiv 24h
+  'semantic-scholar': 60 * 60 * 1000, // S2 1h
+};
+
+function cacheGet(key) {
+  const entry = _cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > entry.ttl) { _cache.delete(key); return null; }
+  return entry.data;
+}
+
+function cacheSet(key, data, ttl) { _cache.set(key, { data, ts: Date.now(), ttl }); }
+
+// 每5分钟清理过期缓存
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _cache) { if (now - v.ts > v.ttl) _cache.delete(k); }
+}, 300000);
+
+// ============================================================
+// fetch + 指数退避重试 (v4: 可配置超时 + 更激进退避)
+// ============================================================
+async function fetchWithRetry(url, options, maxRetries = 3, timeoutMs = 45000) {
   let lastError = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const res = await fetch(url, { ...options, signal: safeTimeoutSignal(25000) });
-
-      // 429 → 指数退避重试
+      const res = await fetch(url, { ...options, signal: safeTimeoutSignal(timeoutMs) });
       if (res.status === 429) {
         const retryAfter = parseInt(res.headers.get('Retry-After') || '0', 10);
-        const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(2000 * Math.pow(2, attempt), 16000);
-        if (attempt < maxRetries) {
-          console.log(`[CF] 429 rate-limited, attempt ${attempt + 1}/${maxRetries + 1}, waiting ${waitMs}ms...`);
-          await sleep(waitMs);
-          continue;
-        }
+        const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(4000 * Math.pow(2, attempt), 32000);
+        if (attempt < maxRetries) { await sleep(waitMs); continue; }
       }
-
-      // 5xx → 退避重试
       if (res.status >= 500 && attempt < maxRetries) {
-        const waitMs = 1000 * Math.pow(2, attempt);
-        console.log(`[CF] ${res.status} error, attempt ${attempt + 1}/${maxRetries + 1}, waiting ${waitMs}ms...`);
-        await sleep(waitMs);
+        await sleep(2000 * Math.pow(2, attempt));
         continue;
       }
-
       return res;
     } catch (e) {
       lastError = e;
       if (attempt < maxRetries && (e.name === 'TimeoutError' || e.message?.includes('timeout'))) {
-        const waitMs = 1000 * Math.pow(2, attempt);
-        console.log(`[CF] network error, attempt ${attempt + 1}/${maxRetries + 1}, waiting ${waitMs}ms...`);
-        await sleep(waitMs);
+        await sleep(1000 * Math.pow(2, attempt));
         continue;
       }
       throw e;
@@ -103,7 +116,7 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
 }
 
 // ============================================================
-// arXiv 搜索
+// arXiv 搜索 (v4: 缓存 + 45s 超时)
 // ============================================================
 async function handleSearchArxiv(request) {
   const url = new URL(request.url);
@@ -111,101 +124,76 @@ async function handleSearchArxiv(request) {
   const start = parseInt(url.searchParams.get('start') || '0', 10);
   const maxResults = Math.min(parseInt(url.searchParams.get('max_results') || '10', 10), 50);
 
-  if (!query.trim()) {
-    return successJson({ data: [], total: 0, offset: start, limit: maxResults }, 'Empty query');
+  if (!query.trim()) return successJson({ data: [], total: 0, limit: maxResults, _cached: false }, 'Empty query');
+
+  // ---- 缓存检查 ----
+  const cacheKey = `arxiv:${query}:${start}:${maxResults}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    return successJson({ ...cached, _cached: true }, `[v4] arXiv 缓存命中: ${cached.data?.length || 0} 条`);
   }
 
   try {
     const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`;
-
     const res = await fetchWithRetry(arxivUrl, {
       method: 'GET',
       headers: { 'User-Agent': 'AcademicHub/1.2 (mailto:research@academichub.local)' },
-    });
-
-    const resContentType = res.headers.get('content-type') || '';
+    }, /* maxRetries= */ 3, /* timeoutMs= */ 45000);
 
     if (!res.ok) {
       return successJson(
-        { data: [], total: 0, offset: start, limit: maxResults,
-          _diag: { stage: 'fetch_error', status: res.status, statusText: res.statusText } },
-        `[v3] arXiv HTTP ${res.status}: ${res.statusText}`);
+        { data: [], total: 0, limit: maxResults, _cached: false },
+        `[v4] arXiv HTTP ${res.status}`);
     }
 
     const xml = await res.text();
-    const xmlLen = xml.length;
-    const hasEntry = xml.includes('<entry>');
-    const xmlHead = xml.substring(0, 200).replace(/[\n\r]/g, ' ');
-
-    if (!hasEntry) {
+    if (!xml.includes('<entry>')) {
       return successJson(
-        { data: [], total: 0, offset: start, limit: maxResults,
-          _diag: { stage: 'no_entry', xmlLength: xmlLen, contentType: resContentType, xmlHead } },
-        `[v3] 无结果: XML=${xmlLen}B ContentType=${resContentType} 含entry=${hasEntry} 头部:"${xmlHead}"`);
+        { data: [], total: 0, limit: maxResults, _cached: false },
+        `[v4] 无结果: XML=${xml.length}B`);
     }
 
-    // Parse totalResults
     const totalMatch = xml.match(/<opensearch:totalResults>(\d+)<\/opensearch:totalResults>/);
     const total = totalMatch ? parseInt(totalMatch[1], 10) : 0;
 
-    // Parse entries
     const entries = [];
     const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
     let match;
     while ((match = entryRegex.exec(xml)) !== null) {
       const entry = match[1];
-      const title = (entry.match(/<title>([\s\S]*?)<\/title>/) || [])[1]
-        ?.replace(/\s+/g, ' ').trim() || '';
+      const title = (entry.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.replace(/\s+/g, ' ').trim() || '';
       const id = (entry.match(/<id>([\s\S]*?)<\/id>/) || [])[1]?.trim() || '';
       const published = (entry.match(/<published>([\s\S]*?)<\/published>/) || [])[1]?.trim() || '';
-      const updated = (entry.match(/<updated>([\s\S]*?)<\/updated>/) || [])[1]?.trim() || '';
-      const summary = (entry.match(/<summary>([\s\S]*?)<\/summary>/) || [])[1]
-        ?.replace(/\s+/g, ' ').trim() || '';
-      const doiMatch = entry.match(/<arxiv:doi>([\s\S]*?)<\/arxiv:doi>/);
-      const doi = doiMatch ? doiMatch[1].trim() : '';
-
-      const catMatch = entry.match(/<arxiv:primary_category[^>]*term="([^"]+)"/);
-      const primaryCategory = catMatch ? catMatch[1] : '';
-
-      const pdfMatch = entry.match(/<link[^>]*title="pdf"[^>]*href="([^"]+)"/);
-      const pdfUrl = pdfMatch ? pdfMatch[1] : '';
-
+      const summary = (entry.match(/<summary>([\s\S]*?)<\/summary>/) || [])[1]?.replace(/\s+/g, ' ').trim() || '';
       const authors = [];
       const authorRegex = /<name>([\s\S]*?)<\/name>/g;
-      let authorMatch;
-      while ((authorMatch = authorRegex.exec(entry)) !== null) {
-        if (!authorMatch[1].includes('@')) authors.push(authorMatch[1].trim());
+      let aMatch;
+      while ((aMatch = authorRegex.exec(entry)) !== null) {
+        if (!aMatch[1].includes('@')) authors.push(aMatch[1].trim());
       }
-
       entries.push({
         id: id.split('/').pop() || id,
-        title,
-        authors,
+        title, authors,
         year: parseInt(published.split('-')[0], 10) || new Date().getFullYear(),
-        venue: 'arXiv',
-        abstract: summary,
-        doi,
-        url: id,
-        pdfUrl,
-        primaryCategory,
-        updated,
-        citations: 0,
+        venue: 'arXiv', abstract: summary, url: id, citations: 0,
       });
     }
 
-    return successJson({ data: entries, total, offset: start, limit: maxResults },
-      `[v3] arXiv 成功: ${entries.length} 条, total=${total}`);
+    const result = { data: entries, total, offset: start, limit: maxResults };
+    cacheSet(cacheKey, result, CACHE_TTL.arxiv);
+
+    return successJson({ ...result, _cached: false },
+      `[v4] arXiv 成功: ${entries.length} 条`);
 
   } catch (e) {
     return successJson(
-      { data: [], total: 0, offset: start, limit: maxResults,
-        _diag: { stage: 'exception', name: e.name, message: e.message } },
-      `[v3] arXiv 异常: ${e.name}=${e.message}`);
+      { data: [], total: 0, limit: maxResults, _cached: false },
+      `[v4] arXiv 异常: ${e.message}`);
   }
 }
 
 // ============================================================
-// Semantic Scholar 搜索
+// Semantic Scholar 搜索 (v4: 缓存 + 更激进重试)
 // ============================================================
 async function handleSearchSemanticScholar(request) {
   const url = new URL(request.url);
@@ -214,39 +202,38 @@ async function handleSearchSemanticScholar(request) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '10', 10), 100);
   const apiKey = url.searchParams.get('apiKey');
 
-  if (!query.trim()) {
-    return successJson({ data: [], total: 0, offset, limit, next: null }, 'Empty query');
+  if (!query.trim()) return successJson({ data: [], total: 0, limit, next: null, _cached: false }, 'Empty query');
+
+  // ---- 缓存检查 ----
+  const cacheKey = `semantic-scholar:${query}:${offset}:${limit}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    return successJson({ ...cached, _cached: true }, `[v4] SS 缓存命中: ${cached.data?.length || 0} 条`);
   }
 
   try {
-    const fields = [
-      'title', 'authors', 'year', 'venue', 'abstract',
-      'citationCount', 'influentialCitationCount', 'externalIds',
-      'url', 'openAccessPdf', 'isOpenAccess', 'tldr', 'publicationTypes',
-    ].join(',');
+    const fields = 'title,authors,year,venue,abstract,citationCount,externalIds,url,openAccessPdf,isOpenAccess';
     const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=${limit}&offset=${offset}`;
-
     const headers = {
       'Accept': 'application/json',
       'User-Agent': 'AcademicHub/1.2 (mailto:research@academichub.local)',
     };
     if (apiKey) headers['x-api-key'] = apiKey;
 
-    const res = await fetchWithRetry(ssUrl, {
-      method: 'GET',
-      headers,
-    });
+    const res = await fetchWithRetry(ssUrl, { method: 'GET', headers },
+      /* maxRetries= */ 4, /* timeoutMs= */ 30000);
 
     if (!res.ok) {
-      if (res.status === 429) {
-        return errorJson('[v3] Semantic Scholar API 限流，所有重试已用尽。请稍后（30-60 秒）再试', 429);
-      }
-      return successJson({ data: [], total: 0, offset, limit, next: null },
-        `[v3] SS API HTTP ${res.status}: ${res.statusText}`);
+      if (res.status === 429) return successJson(
+        { data: [], total: 0, limit, next: null, _cached: false,
+          _hint: '请添加 Semantic Scholar API Key: https://api.semanticscholar.org/' },
+        `[v4] SS 429 限流（已重试 4 次）。${apiKey ? '' : '建议在设置中添加 S2 API Key 提升限额。'}`);
+      return successJson({ data: [], total: 0, limit, next: null, _cached: false },
+        `[v4] SS HTTP ${res.status}`);
     }
 
     const data = await res.json();
-    const papers = (data.data || []).map((p) => ({
+    const papers = (data.data || []).map(p => ({
       id: p.paperId || '',
       title: p.title || '',
       authors: (p.authors || []).map(a => a.name).filter(Boolean),
@@ -254,23 +241,21 @@ async function handleSearchSemanticScholar(request) {
       venue: p.venue || '',
       abstract: p.abstract || '',
       doi: p.externalIds?.DOI || '',
-      arxivId: p.externalIds?.ArXiv || '',
       url: p.url || '',
       citations: p.citationCount || 0,
-      influentialCitations: p.influentialCitationCount || 0,
-      tldr: p.tldr?.text || '',
       openAccessPdf: p.openAccessPdf?.url || '',
       isOpenAccess: p.isOpenAccess || false,
-      publicationTypes: p.publicationTypes || [],
     }));
 
-    const nextOffset = data.next || null;
-    return successJson({ data: papers, total: data.total || papers.length, offset, limit, next: nextOffset },
-      `[v3] SS 成功: ${papers.length} 条`);
+    const result = { data: papers, total: data.total || papers.length, offset, limit, next: data.next || null };
+    cacheSet(cacheKey, result, CACHE_TTL['semantic-scholar']);
+
+    return successJson({ ...result, _cached: false },
+      `[v4] SS 成功: ${papers.length} 条`);
 
   } catch (e) {
-    return successJson({ data: [], total: 0, offset, limit, next: null },
-      `[v3] SS 异常: ${e.name}=${e.message}`);
+    return successJson({ data: [], total: 0, limit, next: null, _cached: false },
+      `[v4] SS 异常: ${e.message}`);
   }
 }
 
@@ -282,14 +267,10 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  // CORS preflight
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
-
-  if (request.method !== 'GET') {
-    return errorJson('Method not allowed', 405);
-  }
+  if (request.method !== 'GET') return errorJson('Method not allowed', 405);
 
   let response;
   if (path.includes('/search/arxiv')) {
@@ -300,11 +281,7 @@ export async function onRequest(context) {
     response = errorJson('Unknown search endpoint', 404);
   }
 
-  // Attach CORS headers
   const headers = new Headers(response.headers);
   Object.entries(corsHeaders(request)).forEach(([k, v]) => headers.set(k, v));
-  return new Response(response.body, {
-    status: response.status,
-    headers,
-  });
+  return new Response(response.body, { status: response.status, headers });
 }
