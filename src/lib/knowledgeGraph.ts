@@ -353,6 +353,60 @@ export function getSubgraphData(subgraphId: string): { entities: KnowledgeEntity
   return { entities, relations };
 }
 
+// ===== Topic 关键词 → 子图映射 =====
+
+/** 主页面知识节点 label → 子图 ID 的硬编码映射表 */
+const TOPIC_TO_SUBGRAPH: Record<string, string> = {
+  // GNN 基础理论 → 核心模型与方法
+  GCN: 'subgraph:gnn-basics',
+  GAT: 'subgraph:gnn-basics',
+  GraphSAGE: 'subgraph:gnn-basics',
+  GIN: 'subgraph:gnn-basics',
+  MessagePassing: 'subgraph:gnn-basics',
+  Aggregation: 'subgraph:gnn-basics',
+  NodeEmbedding: 'subgraph:gnn-basics',
+  AttentionMechanism: 'subgraph:gnn-basics',
+  SpectralGraph: 'subgraph:gnn-basics',
+  // 前沿方法 → 对比学习 / 三元组损失
+  ContrastiveLoss: 'subgraph:advanced',
+  TripletLoss: 'subgraph:advanced',
+  // 数据集
+  CoraDataset: 'subgraph:datasets',
+  PubMedDataset: 'subgraph:datasets',
+  RedditDataset: 'subgraph:datasets',
+  // 欺诈检测
+  CrossEntropy: 'subgraph:fraud-detection',
+};
+
+/**
+ * 根据 topic 关键词查找对应的子图 ID
+ * 策略：先查硬编码映射表，再按实体名模糊匹配回退，都未命中返回 null
+ */
+export function getSubgraphByTopic(topic: string): string | null {
+  // Step 1: 硬编码映射
+  if (TOPIC_TO_SUBGRAPH[topic]) return TOPIC_TO_SUBGRAPH[topic];
+
+  // Step 2: 宽松匹配（忽略大小写）
+  const topicLower = topic.toLowerCase();
+  for (const [key, sgId] of Object.entries(TOPIC_TO_SUBGRAPH)) {
+    if (key.toLowerCase() === topicLower) return sgId;
+  }
+
+  // Step 3: 遍历所有子图，按实体名模糊匹配
+  const subgraphs = getSubgraphs();
+  const graph = getMergedGraph();
+  for (const sg of subgraphs) {
+    for (const entityId of sg.entityIds) {
+      const entity = graph.entities.find(e => e.id === entityId);
+      if (!entity) continue;
+      if (entity.name.toLowerCase().includes(topicLower)) return sg.id;
+      if (topicLower.includes(entity.name.toLowerCase())) return sg.id;
+    }
+  }
+
+  return null;
+}
+
 // ----- 导出默认实例（单例模式） -----
 
 const knowledgeGraphLib = {
@@ -361,6 +415,7 @@ const knowledgeGraphLib = {
   getRelatedEntities,
   getSubgraphs,
   getSubgraphData,
+  getSubgraphByTopic,
 };
 
 export default knowledgeGraphLib;
