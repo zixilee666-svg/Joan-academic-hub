@@ -146,6 +146,37 @@ export default function ResearchPage() {
     }
   };
 
+  const deleteObjective = async (projectId: string, objectiveId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+
+    const newObjectives = (proj.objectives || []).filter(o => o.id !== objectiveId);
+    const completed = newObjectives.filter(o => o.completed).length;
+    const newProgress = newObjectives.length ? Math.round((completed / newObjectives.length) * 100) : 0;
+    const newStatus: ProjectStatus = completed === newObjectives.length && newObjectives.length > 0 ? 'completed' : 'in-progress';
+
+    // Optimistic update
+    setProjects(prev => prev.map(p =>
+      p.id === projectId
+        ? { ...p, objectives: newObjectives, progress: newProgress, status: newStatus, updatedAt: new Date().toISOString() }
+        : p
+    ));
+
+    try {
+      await api.updateProject(projectId, {
+        objectives: newObjectives,
+        progress: newProgress,
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.success('目标已删除');
+    } catch {
+      // Revert on error
+      setProjects(prev => prev.map(p => p.id === projectId ? proj : p));
+      toast.error('删除目标失败');
+    }
+  };
+
   const deleteProject = async (projectId: string) => {
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
@@ -491,6 +522,13 @@ export default function ResearchPage() {
                                     >
                                       {obj.text}
                                     </span>
+                                    <button
+                                      onClick={() => deleteObjective(project.id, obj.id)}
+                                      className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                      title="删除目标"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
                                   </div>
                                 ))}
                                 {(project.objectives || []).length === 0 && (
