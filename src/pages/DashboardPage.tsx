@@ -76,7 +76,7 @@ function StatCard({
   );
 }
 
-// ---------- 阅读热力图（增强版）----------
+// ---------- 阅读热力图（专业版）----------
 function ReadingHeatmap({ data }: { data: number[] }) {
   const days = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -85,34 +85,47 @@ function ReadingHeatmap({ data }: { data: number[] }) {
   const activeDays = data.filter(v => v > 0).length;
   const maxReads = Math.max(...data);
   const avgDaily = activeDays > 0 ? (totalReads / activeDays).toFixed(1) : '0';
+  const avgAllDays = (totalReads / data.length).toFixed(1);
 
-  // ---- 暖色热力梯度 (冷绿 → 暖橙) ----
-  const getColor = (v: number) => {
-    if (v === 0) return 'bg-muted/25 dark:bg-muted/10';
-    if (v === 1) return 'bg-emerald-200 dark:bg-emerald-900/50';
-    if (v <= 3) return 'bg-emerald-400 dark:bg-emerald-700/60';
-    if (v <= 6) return 'bg-amber-400 dark:bg-amber-600/70';
-    return 'bg-orange-500 dark:bg-orange-600/80';
+  // 连续活跃天数
+  let currentStreak = 0;
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (data[i] > 0) currentStreak++;
+    else break;
+  }
+
+  // ---- 5级热力梯度（GitHub风格，更精致） ----
+  const getLevel = (v: number): number => {
+    if (v === 0) return 0;
+    if (v <= 1) return 1;
+    if (v <= 3) return 2;
+    if (v <= 6) return 3;
+    return 4;
   };
 
-  /* 工具提示中对应颜色的色相值 */
-  const getTooltipColor = (v: number) => {
-    if (v === 0) return '#94a3b8';
-    if (v === 1) return '#a7f3d0';
-    if (v <= 3) return '#34d399';
-    if (v <= 6) return '#fbbf24';
-    return '#f97316';
-  };
+  const LEVEL_COLORS = [
+    'bg-[#ebedf0] dark:bg-[#161b22]',
+    'bg-[#9be9a8] dark:bg-[#0e4429]',
+    'bg-[#40c463] dark:bg-[#006d32]',
+    'bg-[#30a14e] dark:bg-[#26a641]',
+    'bg-[#216e39] dark:bg-[#39d353]',
+  ];
+
+  const LEVEL_COLORS_SOLID = [
+    '#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39',
+  ];
+
+  const getColorClass = (v: number) => LEVEL_COLORS[getLevel(v)];
 
   const getIntensityLabel = (v: number) => {
     if (v === 0) return '无阅读';
-    if (v === 1) return '少量';
-    if (v <= 3) return '适中';
-    if (v <= 6) return '较多';
-    return '大量';
+    if (v <= 1) return '少量阅读';
+    if (v <= 3) return '适度阅读';
+    if (v <= 6) return '大量阅读';
+    return '阅读高峰';
   };
 
-  // ---- 日历网格 (周一→周日) ----
+  // ---- 日历网格 ----
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -146,47 +159,59 @@ function ReadingHeatmap({ data }: { data: number[] }) {
   }
 
   // ---- 布局常量 ----
-  const CELL = 14;       // 色块像素
-  const GAP = 3;         // 间距像素
-  const UNIT = CELL + GAP; // 每个单元宽度
-  const LABEL_W = 24;    // 星期标签宽度
+  const CELL = 16;
+  const GAP = 4;
+  const UNIT = CELL + GAP;
+  const LABEL_W = 28;
 
   return (
-    <TooltipProvider delayDuration={80}>
+    <TooltipProvider delayDuration={60}>
       <div>
-        {/* ===== 第一行：统计摘要 ===== */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3">
-          <div className="flex items-center gap-1.5">
+        {/* ===== 统计摘要卡片 ===== */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20">
             <Flame className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs text-muted-foreground">
-              共 <strong className="text-foreground font-semibold">{totalReads}</strong> 篇阅读
+            <span className="text-xs">
+              <strong className="text-foreground font-semibold">{totalReads}</strong>
+              <span className="text-muted-foreground ml-0.5">篇</span>
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-xs text-muted-foreground">
-              <strong className="text-foreground font-semibold">{activeDays}</strong> 天活跃
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs">
+              <strong className="text-foreground font-semibold">{activeDays}</strong>
+              <span className="text-muted-foreground ml-0.5">天活跃</span>
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
-            <span className="text-xs text-muted-foreground">
-              日均 <strong className="text-foreground font-semibold">{avgDaily}</strong> 篇
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+            <div className="w-2 h-2 rounded-full bg-amber-500" />
+            <span className="text-xs">
+              日均 <strong className="text-foreground font-semibold">{avgAllDays}</strong>
+              <span className="text-muted-foreground ml-0.5">篇</span>
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-orange-500" />
-            <span className="text-xs text-muted-foreground">
-              单日最高 <strong className="text-foreground font-semibold">{maxReads}</strong> 篇
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
+            <Trophy className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs">
+              最高 <strong className="text-foreground font-semibold">{maxReads}</strong>
+              <span className="text-muted-foreground ml-0.5">篇/天</span>
             </span>
           </div>
+          {currentStreak > 2 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 animate-pulse">
+              <Flame className="w-3.5 h-3.5 text-red-500" />
+              <span className="text-xs">
+                <strong className="text-red-600 dark:text-red-400 font-semibold">{currentStreak}</strong>
+                <span className="text-muted-foreground ml-0.5">天连续</span>
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* ===== 第二行：月份标签 + 图例 ===== */}
-        <div className="flex items-end justify-between mb-1.5">
-          {/* 月份标签 */}
+        {/* ===== 月份标签 + 图例 ===== */}
+        <div className="flex items-end justify-between mb-2">
           <div
-            className="flex items-end text-[10px] text-muted-foreground font-medium select-none"
+            className="flex items-end text-[11px] text-muted-foreground font-medium select-none"
             style={{ paddingLeft: LABEL_W + GAP }}
           >
             {monthLabels.map((m, i) => {
@@ -195,7 +220,8 @@ function ReadingHeatmap({ data }: { data: number[] }) {
               return (
                 <span
                   key={i}
-                  style={{ marginLeft: i === 0 ? 0 : offset - 14 }}
+                  style={{ marginLeft: i === 0 ? 0 : offset - 16 }}
+                  className="tabular-nums"
                 >
                   {m.label}
                 </span>
@@ -203,14 +229,15 @@ function ReadingHeatmap({ data }: { data: number[] }) {
             })}
           </div>
 
-          {/* 图例（desktop 可见） */}
-          <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground select-none">
+          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-muted-foreground select-none">
             <span>少</span>
-            <div className="h-3 w-3 rounded-[2px] bg-muted/25 dark:bg-muted/10 border border-border/50" />
-            <div className="h-3 w-3 rounded-[2px] bg-emerald-200 dark:bg-emerald-900/50" />
-            <div className="h-3 w-3 rounded-[2px] bg-emerald-400 dark:bg-emerald-700/60" />
-            <div className="h-3 w-3 rounded-[2px] bg-amber-400 dark:bg-amber-600/70" />
-            <div className="h-3 w-3 rounded-[2px] bg-orange-500 dark:bg-orange-600/80" />
+            {LEVEL_COLORS_SOLID.map((color, i) => (
+              <div
+                key={i}
+                className="rounded-[3px]"
+                style={{ width: 12, height: 12, backgroundColor: color }}
+              />
+            ))}
             <span>多</span>
           </div>
         </div>
@@ -219,11 +246,14 @@ function ReadingHeatmap({ data }: { data: number[] }) {
         <div className="flex" style={{ gap: GAP }}>
           {/* 星期标签 */}
           <div
-            className="flex flex-col shrink-0 text-[10px] text-muted-foreground select-none"
+            className="flex flex-col shrink-0 text-[11px] text-muted-foreground select-none font-medium"
             style={{ width: LABEL_W, gap: GAP }}
           >
-            {days.map((d) => (
-              <div key={d} className="flex items-center justify-end pr-1" style={{ height: CELL }}>
+            {days.map((d, i) => (
+              <div key={d} className={cn(
+                "flex items-center justify-end pr-1",
+                (i === 5 || i === 6) && "text-amber-600 dark:text-amber-400"
+              )} style={{ height: CELL }}>
                 {d}
               </div>
             ))}
@@ -242,9 +272,10 @@ function ReadingHeatmap({ data }: { data: number[] }) {
                   const v = dataIdx >= 0 && dataIdx < data.length ? data[dataIdx] : 0;
                   const isToday = cellDate.getTime() === today.getTime();
                   const inFuture = cellDate.getTime() > today.getTime();
+                  const level = getLevel(v);
 
                   const displayDate = cellDate.toLocaleDateString('zh-CN', {
-                    month: 'long', day: 'numeric', weekday: 'short',
+                    month: 'long', day: 'numeric', weekday: 'long',
                   });
 
                   return (
@@ -253,43 +284,62 @@ function ReadingHeatmap({ data }: { data: number[] }) {
                         <motion.div
                           initial={inFuture ? false : { scale: 0, opacity: 0 }}
                           animate={inFuture ? {} : { scale: 1, opacity: 1 }}
-                          transition={{ delay: (w * 7 + d) * 0.0015, duration: 0.18 }}
+                          transition={{ delay: (w * 7 + d) * 0.0012, duration: 0.2 }}
                           className={cn(
-                            'rounded-[3px] transition-all duration-200',
+                            'rounded-[4px] transition-all duration-150 cursor-default',
                             inFuture
                               ? 'bg-transparent'
-                              : getColor(v),
+                              : getColorClass(v),
+                            !inFuture && level >= 3 && 'shadow-sm',
+                            !inFuture && level === 4 && 'shadow-md',
                             !inFuture && v > 0 && [
-                              'hover:scale-125 hover:z-10',
-                              'hover:ring-2 hover:ring-ring/50 hover:shadow-sm',
+                              'hover:scale-130 hover:z-10',
+                              'hover:ring-2 hover:ring-primary/40 hover:shadow-lg',
                             ],
-                            !inFuture && v === 0 && 'hover:ring-1 hover:ring-border',
-                            isToday && '!ring-2 !ring-primary !ring-offset-1 !ring-offset-card',
+                            !inFuture && v === 0 && 'hover:ring-1 hover:ring-border hover:bg-border/50',
+                            isToday && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
                           )}
                           style={{ width: CELL, height: CELL }}
                         />
                       </TooltipTrigger>
                       {!inFuture && (
-                        <TooltipContent side="top" className="text-xs py-2 px-3">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="font-semibold text-foreground">{displayDate}</span>
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className="inline-block w-2.5 h-2.5 rounded-full shrink-0 border border-black/10"
-                                style={{ backgroundColor: getTooltipColor(v) }}
+                        <TooltipContent side="top" className="px-3 py-2 max-w-[220px]">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="font-semibold text-foreground text-xs">{displayDate}</span>
+                              {isToday && (
+                                <Badge variant="default" className="text-[10px] h-4 px-1.5">
+                                  今天
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-3 h-3 rounded-[2px] shrink-0"
+                                style={{ backgroundColor: LEVEL_COLORS_SOLID[level] }}
                               />
-                              <span className="text-muted-foreground">
-                                {v === 0 ? '无阅读记录' : (
+                              <span className="text-xs text-muted-foreground">
+                                {v === 0 ? (
+                                  '无阅读记录'
+                                ) : (
                                   <>
-                                    <strong className="text-foreground">{v}</strong> 篇 · {getIntensityLabel(v)}
+                                    <strong className="text-foreground">{v}</strong> 篇 ·
+                                    <span className="ml-1">{getIntensityLabel(v)}</span>
                                   </>
                                 )}
                               </span>
                             </div>
-                            {isToday && (
-                              <Badge variant="default" className="text-[10px] h-4 px-1.5 mt-0.5">
-                                今天
-                              </Badge>
+                            {v > 0 && dataIdx > 0 && data[dataIdx - 1] > 0 && (
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                                连续活跃第 {(() => {
+                                  let s = 1;
+                                  for (let k = dataIdx - 1; k >= 0; k--) {
+                                    if (data[k] > 0) s++;
+                                    else break;
+                                  }
+                                  return s;
+                                })()} 天
+                              </p>
                             )}
                           </div>
                         </TooltipContent>
@@ -303,13 +353,15 @@ function ReadingHeatmap({ data }: { data: number[] }) {
         </div>
 
         {/* 移动端图例 */}
-        <div className="flex sm:hidden items-center justify-end gap-1 mt-2 text-[10px] text-muted-foreground select-none">
+        <div className="flex sm:hidden items-center justify-end gap-1.5 mt-2.5 text-[10px] text-muted-foreground select-none">
           <span>少</span>
-          <div className="h-3 w-3 rounded-[2px] bg-muted/25 border border-border/50" />
-          <div className="h-3 w-3 rounded-[2px] bg-emerald-200 dark:bg-emerald-900/50" />
-          <div className="h-3 w-3 rounded-[2px] bg-emerald-400 dark:bg-emerald-700/60" />
-          <div className="h-3 w-3 rounded-[2px] bg-amber-400 dark:bg-amber-600/70" />
-          <div className="h-3 w-3 rounded-[2px] bg-orange-500 dark:bg-orange-600/80" />
+          {LEVEL_COLORS_SOLID.map((color, i) => (
+            <div
+              key={i}
+              className="rounded-[3px]"
+              style={{ width: 12, height: 12, backgroundColor: color }}
+            />
+          ))}
           <span>多</span>
         </div>
       </div>

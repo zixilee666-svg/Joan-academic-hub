@@ -2356,7 +2356,7 @@ export async function onRequest(context) {
       const readPapers = papers.filter(p => p.isRead).length;
       const readingPapers = papers.filter(p => p.readingStatus === 'reading').length;
 
-      // Generate 90-day heatmap based on paper addedAt dates
+      // Generate 91-day heatmap based on reading records + paper addedAt dates
       const today = new Date();
       const heatmapSize = 91; // 90 days + today
       const heatmap = new Array(heatmapSize).fill(0);
@@ -2370,12 +2370,20 @@ export async function onRequest(context) {
         return `${y}-${m}-${day}`;
       };
 
+      // 1. Read actual reading records from KV
+      const readingRecords = await kvGetJson('users:' + payload.userId + ':reading-records') || {};
+      for (const [dateStr, count] of Object.entries(readingRecords)) {
+        dateMap.set(dateStr, (dateMap.get(dateStr) || 0) + (Number(count) || 0));
+      }
+
+      // 2. Also include paper addedAt dates as fallback activity
       for (const p of papers) {
         const dateField = p.addedAt || p.createdAt;
         if (dateField) {
           const d = new Date(dateField);
           const dateStr = fmtDate(d);
-          dateMap.set(dateStr, (dateMap.get(dateStr) || 0) + 1);
+          // Weight added papers less than actual reading (0.5x)
+          dateMap.set(dateStr, (dateMap.get(dateStr) || 0) + 0.5);
         }
       }
 
@@ -2383,7 +2391,8 @@ export async function onRequest(context) {
         const d = new Date(today);
         d.setDate(today.getDate() - (heatmapSize - 1 - i));
         const dateStr = fmtDate(d);
-        heatmap[i] = dateMap.get(dateStr) || 0;
+        const val = dateMap.get(dateStr) || 0;
+        heatmap[i] = Math.round(val);
       }
 
       // Calculate streak (consecutive days with activity, ending today)
@@ -2498,7 +2507,44 @@ export async function onRequest(context) {
   // 阅读记录路由
   // ========================================
   if (segments[0] === 'reading-records' && request.method === 'POST') {
-    return success(null, 'Success', request);
+    const payload = await requireAuth(request, JWT_SECRET);
+    if (payload instanceof Response) return payload;
+
+    try {
+      const body = await request.json();
+      const { paperId, action, duration } = body || {};
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      // Read existing reading records map
+      const recordsKey = 'users:' + payload.userId + ':reading-records';
+      const records = await kvGetJson(recordsKey) || {};
+
+      // Increment today's count
+      records[dateStr] = (records[dateStr] || 0) + 1;
+
+      // Also store a recent activity log (last 100 entries)
+      const logKey = 'users:' + payload.userId + ':reading-log';
+      const log = await kvGetJson(logKey) || [];
+      log.push({
+        paperId: paperId || null,
+        action: action || 'read',
+        duration: duration || 0,
+        timestamp: new Date().toISOString(),
+      });
+      // Keep only last 100
+      if (log.length > 100) log.splice(0, log.length - 100);
+
+      await Promise.all([
+        kvPutJson(recordsKey, records),
+        kvPutJson(logKey, log),
+      ]);
+
+      return success({ date: dateStr, count: records[dateStr] }, 'Reading recorded', request);
+    } catch (e) {
+      console.error('[EF-ReadingRecord] Error:', e.message);
+      return success(null, 'Success', request);
+    }
   }
 
   // ========================================

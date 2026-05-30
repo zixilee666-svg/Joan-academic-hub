@@ -496,19 +496,79 @@ const mockMaterials: Material[] = [
   },
 ];
 
+// 生成91天模拟热力图数据（模拟真实阅读习惯）
+function generateMockHeatmap(): number[] {
+  const days = 91;
+  const data: number[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (days - 1 - i));
+    const dayOfWeek = d.getDay(); // 0=周日, 1=周一...
+
+    // 基础活跃度：工作日 > 周末
+    let base = dayOfWeek === 0 || dayOfWeek === 6 ? 0.3 : 0.7;
+
+    // 随机波动
+    const rand = Math.random();
+    let value = 0;
+
+    if (rand < 0.15 * base) {
+      // 不活跃日
+      value = 0;
+    } else if (rand < 0.5 * base) {
+      value = 1;
+    } else if (rand < 0.8 * base) {
+      value = Math.floor(Math.random() * 3) + 2; // 2-4
+    } else if (rand < 0.95 * base) {
+      value = Math.floor(Math.random() * 4) + 5; // 5-8
+    } else {
+      // 阅读高峰日（少量）
+      value = Math.floor(Math.random() * 10) + 10; // 10-19
+    }
+
+    // 近期活跃度更高（模拟最近更活跃）
+    const recency = i / days;
+    if (recency > 0.7 && Math.random() > 0.3) {
+      value = Math.max(value, Math.floor(Math.random() * 5) + 3);
+    }
+
+    data.push(value);
+  }
+
+  return data;
+}
+
+const mockWeeklyHeatmap = generateMockHeatmap();
+
 const mockReadingStats: ReadingStats = {
-  totalPapers: 8,
-  weeklyRead: 3,
-  toRead: 5,
-  points: 280,
-  streakDays: 7,
-  weeklyHeatmap: [3, 2, 4, 1, 3, 2, 3],
-  readPapers: 3,
-  readingPapers: 2,
-  unreadPapers: 3,
-  weeklyGoal: 5,
-  weeklyCompleted: 3,
-  totalReadingTime: 1250,
+  totalPapers: 162,
+  weeklyRead: mockWeeklyHeatmap.slice(-7).reduce((a, b) => a + b, 0),
+  toRead: 18,
+  points: 2840,
+  streakDays: (() => {
+    let streak = 0;
+    for (let i = mockWeeklyHeatmap.length - 1; i >= 0; i--) {
+      if (mockWeeklyHeatmap[i] > 0) {
+        streak++;
+      } else if (i > 0 && mockWeeklyHeatmap[i - 1] > 0) {
+        streak++;
+        i--;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  })(),
+  weeklyHeatmap: mockWeeklyHeatmap,
+  readPapers: 58,
+  readingPapers: 12,
+  unreadPapers: 92,
+  weeklyGoal: 10,
+  weeklyCompleted: Math.min(mockWeeklyHeatmap.slice(-7).reduce((a, b) => a + b, 0), 10),
+  totalReadingTime: 2840,
 };
 
 function mockDelay(ms = 300): Promise<void> {
