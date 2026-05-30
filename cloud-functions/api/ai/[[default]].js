@@ -106,7 +106,7 @@ async function callOpenAICompatibleApi(baseUrl, apiKey, model, messages, { strea
 // 路由分发
 // ============================================================
 
-export default async function onRequest(context) {
+export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
   const path = url.pathname;
