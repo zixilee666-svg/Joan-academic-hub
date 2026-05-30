@@ -12,8 +12,8 @@
   "edgeFunctions": {
     "routes": [
       {
-        "src": "^/api/(a[^i][a-z]*|[b-z][a-z]*)(/.*)?$",
-        "dest": "/api/[[default]].js"
+        "src": "^/api/(?!ai/)(.*)$",
+        "dest": "/api/_kv-handler.js"
       }
     ]
   },
