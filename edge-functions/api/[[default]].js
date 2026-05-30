@@ -3597,11 +3597,11 @@ export async function onRequest(context) {
       }
     }
 
-    if (segments[1] === 'chat' && request.method === 'POST') {
-      return handleAiChat(request, JWT_SECRET);
-    }
-    if (segments[1] === 'parse-paper' && request.method === 'POST') {
-      return handleParsePaper(request);
+    // NOTE: /api/ai/chat 和 /api/ai/parse-paper 已迁移至 Cloud Function
+    // (Edge Function V8 isolate 无法访问外部网络)
+    // Cloud Function 自动路由: cloud-functions/api/ai/[[default]].js → /api/ai/*
+    if (segments[1] === 'chat' || segments[1] === 'parse-paper') {
+      return json({ success: false, error: `${segments[1]} 已迁移至 Cloud Function，请等待部署生效`, code: 'MIGRATED_TO_CF' }, 503, request);
     }
   }
 
