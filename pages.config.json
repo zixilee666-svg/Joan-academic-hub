@@ -9,18 +9,6 @@
       "target": "./dist"
     }
   ],
-  "edgeFunctions": {
-    "routes": [
-      {
-        "src": "^/api/ai/conversations(/.*)?$",
-        "dest": "/api/_api.js"
-      },
-      {
-        "src": "^/api/([^a][^/]*|a[^i][^/]*)(/.*)?$",
-        "dest": "/api/_api.js"
-      }
-    ]
-  },
   "envVariables": {
     "JWT_SECRET": "your-jwt-secret-key-min-32-chars",
     "KV_STORAGE_ID": "your-kv-storage-id",

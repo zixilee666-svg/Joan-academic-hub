@@ -23,7 +23,7 @@ export const chatService = {
       }
     })();
 
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/ai/chat`, {
+    const res = await fetch('/api-ai/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -3597,11 +3597,16 @@ export async function onRequest(context) {
       }
     }
 
-    // NOTE: /api/ai/chat 和 /api/ai/parse-paper 已迁移至 Cloud Function
-    // (Edge Function V8 isolate 无法访问外部网络)
-    // Cloud Function 自动路由: cloud-functions/api/ai/[[default]].js → /api/ai/*
+    // DEPRECATED: /api/ai/chat 和 /api/ai/parse-paper 已迁移至 /api-ai/
+    // Cloud Function: cloud-functions/api-ai/[[default]].js (Node.js v20, 120s, 外部网络可用)
+    // Edge Function (V8) 无法访问外部网络，AI 端点需走 Cloud Function
     if (segments[1] === 'chat' || segments[1] === 'parse-paper') {
-      return json({ success: false, error: `${segments[1]} 已迁移至 Cloud Function，请等待部署生效`, code: 'MIGRATED_TO_CF' }, 503, request);
+      return json({
+        success: false,
+        error: 'AI 端点已迁移至 /api-ai/。请更新客户端到 /api-ai/chat 或 /api-ai/parse-paper',
+        code: 'AI_ENDPOINT_MIGRATED',
+        redirect: '/api-ai/' + segments[1],
+      }, 308, request);
     }
   }
 

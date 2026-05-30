@@ -961,9 +961,12 @@ function handleMockRequest(path: string, method: string, body?: any): any {
     return { success: true, data: body };
   }
 
-  // AI Chat (Mock: echo back)
-  if (path === '/ai/chat' && method === 'POST') {
+  // AI Chat & Parse (Mock handlers)
+  if (path === '/api-ai/chat' && method === 'POST') {
     return { success: true, data: { reply: 'Mock AI 响应：这是一个测试回复。', conversationId: 'conv-mock-001' } };
+  }
+  if (path === '/api-ai/parse-paper' && method === 'POST') {
+    return { success: true, data: { title: 'Mock Paper Title', authors: ['Author One', 'Author Two'], year: 2024, venue: 'Mock Conference', abstract: 'This is a mock abstract for testing purposes.' } };
   }
   if (path === '/ai/conversations' && method === 'GET') {
     return { success: true, data: [] };
@@ -1212,7 +1215,7 @@ class ApiClient {
       const timeoutMs = config.timeout ?? 30000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const url = config.path.startsWith('/api-external/')
+      const url = config.path.startsWith('/api-external/') || config.path.startsWith('/api-ai/')
         ? config.path
         : `${this.baseUrl}${config.path}`;
       const response = await fetch(url, {
@@ -1586,7 +1589,7 @@ class ApiClient {
         data: { reply: 'Mock AI 响应：这是一个测试回复。', conversationId: 'conv-mock-001' },
       }), { headers: { 'Content-Type': 'application/json' } });
     }
-    return fetch(`${this.baseUrl}/ai/chat`, {
+    return fetch('/api-ai/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1666,7 +1669,7 @@ class ApiClient {
         citations: { bibtex: string; ieee: string; gb7714: string };
         references: { title: string; authors: string[]; year: number; venue: string }[];
       };
-    }>('/ai/parse-paper', {
+    }>('/api-ai/parse-paper', {
       method: 'POST',
       timeout: 60000,
       body: JSON.stringify({ text, modelConfig }),
