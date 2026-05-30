@@ -5,7 +5,9 @@ import { useState, useEffect } from 'react';
 import {
   Sparkles, Save, X, Plus, Trash2, BookOpen,
   Quote, FileText, Users, Calendar, Hash, Link,
-  Tag, AlignLeft, ChevronDown, ChevronUp,
+  Tag, AlignLeft, ChevronDown,   ChevronUp,
+  Lightbulb, AlertTriangle, CheckCircle, Microscope,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,7 +24,7 @@ import { cn } from '@/lib/utils';
 export interface ParsedPaperResult {
   title: string;
   authors: string[];
-  year: number;
+  year: number | null;
   month: number | null;
   venue: string;
   volume: string;
@@ -32,6 +34,12 @@ export interface ParsedPaperResult {
   url: string;
   abstract: string;
   keywords: string[];
+  sourceType: string;
+  citationCount: number | null;
+  researchMethod: string;
+  mainContribution: string;
+  limitations: string;
+  conclusion: string;
   citations: {
     bibtex: string;
     ieee: string;
@@ -54,14 +62,17 @@ export default function AiParseResultDialog({
   onConfirm,
 }: AiParseResultDialogProps) {
   const [form, setForm] = useState<ParsedPaperResult>({
-    title: '', authors: [], year: new Date().getFullYear(), month: null,
+    title: '', authors: [], year: null, month: null,
     venue: '', volume: '', issue: '', pages: '', doi: '', url: '',
     abstract: '', keywords: [],
+    sourceType: '', citationCount: null,
+    researchMethod: '', mainContribution: '', limitations: '', conclusion: '',
     citations: { bibtex: '', ieee: '', gb7714: '' },
     references: [],
   });
   const [showCitations, setShowCitations] = useState(false);
   const [showReferences, setShowReferences] = useState(false);
+  const [showAbstract, setShowAbstract] = useState(false);
   const [newAuthor, setNewAuthor] = useState('');
   const [newKeyword, setNewKeyword] = useState('');
 
@@ -173,8 +184,8 @@ export default function AiParseResultDialog({
               </div>
             </div>
 
-            {/* Year / Month / Venue */}
-            <div className="grid grid-cols-3 gap-3">
+            {/* Year / Month / Venue / SourceType */}
+            <div className="grid grid-cols-4 gap-3">
               <div>
                 <Label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   <Calendar className="h-3.5 w-3.5" />
@@ -182,8 +193,12 @@ export default function AiParseResultDialog({
                 </Label>
                 <Input
                   type="number"
-                  value={form.year}
-                  onChange={e => updateField('year', Number(e.target.value) || new Date().getFullYear())}
+                  value={form.year ?? ''}
+                  onChange={e => {
+                    const v = e.target.value;
+                    updateField('year', v ? Number(v) : null);
+                  }}
+                  placeholder="如 2024"
                   className="mt-1.5"
                 />
               </div>
@@ -216,9 +231,21 @@ export default function AiParseResultDialog({
                   placeholder="期刊或会议名称"
                 />
               </div>
+              <div>
+                <Label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  类型
+                </Label>
+                <Input
+                  value={form.sourceType}
+                  onChange={e => updateField('sourceType', e.target.value)}
+                  className="mt-1.5"
+                  placeholder="journal/conference"
+                />
+              </div>
             </div>
 
-            {/* Volume / Issue / Pages / DOI / URL */}
+            {/* Volume / Issue / Pages / DOI / URL / CitationCount */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -228,7 +255,7 @@ export default function AiParseResultDialog({
                   value={form.volume}
                   onChange={e => updateField('volume', e.target.value)}
                   className="mt-1.5"
-                  placeholder="如: 42"
+                  placeholder="42"
                 />
               </div>
               <div>
@@ -239,7 +266,7 @@ export default function AiParseResultDialog({
                   value={form.issue}
                   onChange={e => updateField('issue', e.target.value)}
                   className="mt-1.5"
-                  placeholder="如: 3"
+                  placeholder="3"
                 />
               </div>
               <div>
@@ -250,7 +277,7 @@ export default function AiParseResultDialog({
                   value={form.pages}
                   onChange={e => updateField('pages', e.target.value)}
                   className="mt-1.5"
-                  placeholder="如: 123-145"
+                  placeholder="123-145"
                 />
               </div>
               <div>
@@ -263,6 +290,22 @@ export default function AiParseResultDialog({
                   onChange={e => updateField('doi', e.target.value)}
                   className="mt-1.5"
                   placeholder="10.xxxx/xxxx"
+                />
+              </div>
+              <div>
+                <Label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  引用次数
+                </Label>
+                <Input
+                  type="number"
+                  value={form.citationCount ?? ''}
+                  onChange={e => {
+                    const v = e.target.value;
+                    updateField('citationCount', v ? Number(v) : null);
+                  }}
+                  className="mt-1.5"
+                  placeholder="如 128"
                 />
               </div>
               <div className="col-span-2">
@@ -279,19 +322,79 @@ export default function AiParseResultDialog({
               </div>
             </div>
 
-            {/* Abstract */}
+            {/* Abstract — with expand/collapse */}
             <div>
-              <Label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                <AlignLeft className="h-3.5 w-3.5" />
-                摘要
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <AlignLeft className="h-3.5 w-3.5" />
+                  摘要
+                </Label>
+                {form.abstract.length > 300 && (
+                  <button
+                    onClick={() => setShowAbstract(!showAbstract)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {showAbstract ? '收起' : '展开'}
+                  </button>
+                )}
+              </div>
               <Textarea
                 value={form.abstract}
                 onChange={e => updateField('abstract', e.target.value)}
-                className="mt-1.5 min-h-[100px]"
+                className={cn(
+                  'mt-1.5 transition-all',
+                  showAbstract || form.abstract.length <= 300 ? 'min-h-[120px]' : 'min-h-[80px]'
+                )}
                 placeholder="文献摘要..."
+                readOnly={false}
               />
             </div>
+
+            {/* Academic Analysis Fields */}
+            {(form.researchMethod || form.mainContribution || form.limitations || form.conclusion) && (
+              <div className="rounded-lg border bg-accent/20 p-4 space-y-4">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <Microscope className="h-3.5 w-3.5" />
+                  学术分析
+                </h4>
+                {form.researchMethod && (
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground uppercase">
+                      <Lightbulb className="h-3 w-3" />
+                      研究方法
+                    </Label>
+                    <p className="mt-1 text-sm text-foreground">{form.researchMethod}</p>
+                  </div>
+                )}
+                {form.mainContribution && (
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground uppercase">
+                      <CheckCircle className="h-3 w-3" />
+                      核心贡献
+                    </Label>
+                    <p className="mt-1 text-sm text-foreground">{form.mainContribution}</p>
+                  </div>
+                )}
+                {form.limitations && (
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground uppercase">
+                      <AlertTriangle className="h-3 w-3" />
+                      局限性与未来工作
+                    </Label>
+                    <p className="mt-1 text-sm text-foreground">{form.limitations}</p>
+                  </div>
+                )}
+                {form.conclusion && (
+                  <div>
+                    <Label className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground uppercase">
+                      <CheckCircle className="h-3 w-3" />
+                      主要结论
+                    </Label>
+                    <p className="mt-1 text-sm text-foreground">{form.conclusion}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Keywords */}
             <div>

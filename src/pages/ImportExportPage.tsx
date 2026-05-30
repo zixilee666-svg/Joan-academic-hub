@@ -331,7 +331,7 @@ export default function ImportExportPage() {
         const result: ParsedPaperResult = {
           title: res.data.title || '',
           authors: res.data.authors || [],
-          year: res.data.year || new Date().getFullYear(),
+          year: res.data.year ?? null,
           month: res.data.month ?? null,
           venue: res.data.venue || '',
           volume: res.data.volume || '',
@@ -341,6 +341,12 @@ export default function ImportExportPage() {
           url: res.data.url || '',
           abstract: res.data.abstract || '',
           keywords: res.data.keywords || [],
+          sourceType: res.data.sourceType || '',
+          citationCount: res.data.citationCount ?? null,
+          researchMethod: res.data.researchMethod || '',
+          mainContribution: res.data.mainContribution || '',
+          limitations: res.data.limitations || '',
+          conclusion: res.data.conclusion || '',
           citations: res.data.citations || { bibtex: '', ieee: '', gb7714: '' },
           references: res.data.references || [],
         };
