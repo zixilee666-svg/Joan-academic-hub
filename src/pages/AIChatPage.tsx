@@ -438,7 +438,49 @@ export default function AIChatPage() {
   const clearChat = () => {
     setMessages([]);
     setShowQuickPrompts(true);
+    // 同步清空 conversation 中的消息并持久化
+    if (activeConvId) {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        return { ...c, messages: [], updatedAt: new Date().toISOString() };
+      }));
+      setTimeout(() => {
+        const conv = conversationsRef.current.find(c => c.id === activeConvId);
+        if (conv) {
+          api.saveConversation(activeConvId, { ...conv, messages: [], updatedAt: new Date().toISOString() })
+            .catch(e => console.error('[AIChat] Clear persist failed:', e));
+        }
+      }, 300);
+    }
     toast.success('对话已清空');
+  };
+
+  // Delete single message
+  const deleteMessage = (msgId: string) => {
+    // 1. 从 UI state 移除
+    const newMessages = messages.filter(m => m.id !== msgId);
+    setMessages(newMessages);
+    // 2. 从 conversation 中移除
+    if (activeConvId) {
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConvId) return c;
+        const updatedMessages = (c.messages || []).filter(m => m.id !== msgId);
+        return { ...c, messages: updatedMessages, updatedAt: new Date().toISOString() };
+      }));
+      // 3. 持久化到 localStorage
+      setTimeout(() => {
+        const conv = conversationsRef.current.find(c => c.id === activeConvId);
+        if (conv) {
+          api.saveConversation(activeConvId, {
+            ...conv,
+            messages: (conv.messages || []).filter(m => m.id !== msgId),
+            updatedAt: new Date().toISOString(),
+          }).catch(e => console.error('[AIChat] Delete msg persist failed:', e));
+        }
+      }, 300);
+    }
+    if (newMessages.length === 0) setShowQuickPrompts(true);
+    toast.success('消息已删除');
   };
 
   // Switch conversation
@@ -619,7 +661,7 @@ export default function AIChatPage() {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i === messages.length - 1 ? 0 : 0 }}
-                  className={cn('flex gap-3', msg.role === 'user' && 'flex-row-reverse')}
+                  className={cn('flex gap-3 group', msg.role === 'user' && 'flex-row-reverse')}
                 >
                   <div className={cn(
                     'w-8 h-8 rounded-full shrink-0 flex items-center justify-center',
@@ -639,6 +681,13 @@ export default function AIChatPage() {
                     </div>
                     <div className={cn('flex items-center gap-2 mt-1', msg.role === 'user' ? 'justify-end' : '')}>
                       <span className="text-[10px] text-muted-foreground">{formatTime(msg.timestamp)}</span>
+                      <button
+                        onClick={() => deleteMessage(msg.id)}
+                        className="text-muted-foreground/40 hover:text-destructive transition-all opacity-0 group-hover:opacity-100"
+                        title="删除此消息"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                       {msg.role === 'assistant' && (
                         <button onClick={() => copyMessage(msg)} className="text-muted-foreground hover:text-foreground transition-colors">
                           {copiedId === msg.id ? <CheckCheck className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3" />}
