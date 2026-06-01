@@ -151,7 +151,12 @@ async function handleParsePaper(request) {
 
     const baseUrl = modelConfig?.baseUrl || '';
     const apiKey = modelConfig?.apiKey || '';
-    const model = modelConfig?.model || 'deepseek-chat';
+    let model = modelConfig?.model || 'deepseek-chat';
+    // 防护：模型名称可能被误填为 URL
+    if (!model || model.startsWith('http')) {
+      console.warn('[CF-ParsePaper] Invalid model name detected:', model, '→ falling back to deepseek-chat');
+      model = 'deepseek-chat';
+    }
 
     const currentYear = new Date().getFullYear();
 
@@ -407,7 +412,12 @@ async function handleAiChat(request) {
 
     const baseUrl = modelConfig?.baseUrl || '';
     const apiKey = modelConfig?.apiKey || '';
-    const model = modelConfig?.model || 'deepseek-chat';
+    let model = modelConfig?.model || 'deepseek-chat';
+    // 防护：模型名称可能被误填为 URL
+    if (!model || model.startsWith('http')) {
+      console.warn('[CF-AiChat] Invalid model name detected:', model, '→ falling back to deepseek-chat');
+      model = 'deepseek-chat';
+    }
 
     console.log('[CF-AiChat] model:', model, 'conversationId:', conversationId);
 

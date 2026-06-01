@@ -40,7 +40,14 @@ export async function parsePaperDirectly(
   modelConfig: ModelConfig,
   signal?: AbortSignal
 ): Promise<{ success: boolean; data?: ParseResult; error?: string }> {
-  const { baseUrl, apiKey, model } = modelConfig;
+  const { baseUrl, apiKey, model: rawModel } = modelConfig;
+
+  // 防护：模型名称可能被误填为 URL
+  let model = rawModel || '';
+  if (!model || model.startsWith('http')) {
+    console.warn('[aiParser] Invalid model name detected:', model, '→ falling back to deepseek-chat');
+    model = 'deepseek-chat';
+  }
 
   if (!text || text.trim().length < 30) {
     return { success: false, error: '文本太短，无法解析' };

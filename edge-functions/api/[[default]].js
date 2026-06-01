@@ -375,7 +375,14 @@ async function handleAiChat(request, JWT_SECRET) {
   try {
     const body = await request.json();
     const { message, modelConfig, conversationId } = body;
-    const { baseUrl, apiKey, model } = modelConfig || {};
+    const { baseUrl, apiKey, model: rawModel } = modelConfig || {};
+
+    // 防护：模型名称可能被误填为 URL
+    let model = rawModel || '';
+    if (!model || model.startsWith('http')) {
+      console.warn('[Edge-AiChat] Invalid model name detected:', model, '→ falling back to deepseek-chat');
+      model = 'deepseek-chat';
+    }
 
     if (!message || !apiKey || !baseUrl) {
       return apiError('message, apiKey and baseUrl are required', 400, 'VALIDATION_ERROR', request);
@@ -2774,6 +2781,7 @@ export async function onRequest(context) {
       const res = await fetch(arxivUrl, {
         method: 'GET',
         headers: { 'User-Agent': 'AcademicHub/1.0 (mailto:research@academichub.local)' },
+        signal: AbortSignal.timeout(20000),
       });
       if (!res.ok) {
         console.error('[SearchArxiv] HTTP error:', res.status);
@@ -2869,7 +2877,7 @@ export async function onRequest(context) {
       const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&fields=${fields}&limit=${limit}&offset=${offset}`;
       const headers = { 'Accept': 'application/json' };
       if (apiKey) headers['x-api-key'] = apiKey;
-      const res = await fetch(ssUrl, { method: 'GET', headers });
+      const res = await fetch(ssUrl, { method: 'GET', headers, signal: AbortSignal.timeout(20000) });
       if (!res.ok) {
         const errText = await res.text();
         console.error('[SearchSS] API error:', res.status, errText);
