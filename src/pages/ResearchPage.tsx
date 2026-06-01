@@ -25,51 +25,46 @@ import AnimatedPage from '@/components/shared/AnimatedPage';
 import EmptyState from '@/components/shared/EmptyState';
 import JoanQuote from '@/components/shared/JoanQuote';
 import { api } from '@/lib/api';
+import { useDataStore } from '@/store/dataStore';
 import type { Project, Paper, Objective } from '@/types';
 import { cn, formatDate } from '@/lib/utils';
 
 type ProjectStatus = Project['status'];
 
 export default function ResearchPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [papers, setPapers] = useState<Paper[]>([]);
+  const {
+    projects, papers,
+    projectsLoaded, papersLoaded,
+    ensureProjects, ensurePapers,
+    invalidateAll,
+    addToProjects, removeFromProjects, updateInProjects, restoreProjects,
+  } = useDataStore();
   const [filterStatus, setFilterStatus] = useState<ProjectStatus | 'all'>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [newObjectiveText, setNewObjectiveText] = useState<Record<string, string>>({});
   const [managePapersOpen, setManagePapersOpen] = useState(false);
   const [managingProject, setManagingProject] = useState<Project | null>(null);
   const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
   const [paperSearchQuery, setPaperSearchQuery] = useState('');
 
-  // Load projects and papers on mount
+  // Load projects and papers on mount (via dataStore cache)
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
-      const [projRes, paperRes] = await Promise.all([
-        api.getProjects(),
-        api.getPapers({ pageSize: 200 }),
-      ]);
-      if (projRes.success && projRes.data) {
-        setProjects(projRes.data);
-      }
-      if (paperRes.success && paperRes.data) {
-        setPapers(paperRes.data);
-      }
+      await Promise.all([ensureProjects(), ensurePapers()]);
     } catch (err) {
       console.error('[ResearchPage] Load error:', err);
       toast.error('加载数据失败');
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [ensureProjects, ensurePapers]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const loading = !projectsLoaded || !papersLoaded;
 
   const filtered = useMemo(() => {
     if (filterStatus === 'all') return projects;
@@ -119,11 +114,7 @@ export default function ResearchPage() {
     const newStatus: ProjectStatus = completed === newObjectives.length && newObjectives.length > 0 ? 'completed' : 'in-progress';
 
     // Optimistic update
-    setProjects(prev => prev.map(p =>
-      p.id === projectId
-        ? { ...p, objectives: newObjectives, progress: newProgress, status: newStatus, updatedAt: new Date().toISOString() }
-        : p
-    ));
+    updateInProjects({ ...proj, objectives: newObjectives, progress: newProgress, status: newStatus, updatedAt: new Date().toISOString() });
 
     try {
       await api.updateProject(projectId, {
@@ -134,7 +125,7 @@ export default function ResearchPage() {
       });
     } catch {
       // Revert on error
-      setProjects(prev => prev.map(p => p.id === projectId ? proj : p));
+      updateInProjects(proj);
       toast.error('更新目标失败');
     }
   };
@@ -154,18 +145,14 @@ export default function ResearchPage() {
     const newObjectives = [...(proj.objectives || []), newObj];
 
     // Optimistic update
-    setProjects(prev => prev.map(p =>
-      p.id === projectId
-        ? { ...p, objectives: newObjectives }
-        : p
-    ));
+    updateInProjects({ ...proj, objectives: newObjectives });
     setNewObjectiveText(prev => ({ ...prev, [projectId]: '' }));
 
     try {
       await api.updateProject(projectId, { objectives: newObjectives });
     } catch {
       // Revert on error
-      setProjects(prev => prev.map(p => p.id === projectId ? proj : p));
+      updateInProjects(proj);
       toast.error('添加目标失败');
     }
   };
@@ -180,11 +167,7 @@ export default function ResearchPage() {
     const newStatus: ProjectStatus = completed === newObjectives.length && newObjectives.length > 0 ? 'completed' : 'in-progress';
 
     // Optimistic update
-    setProjects(prev => prev.map(p =>
-      p.id === projectId
-        ? { ...p, objectives: newObjectives, progress: newProgress, status: newStatus, updatedAt: new Date().toISOString() }
-        : p
-    ));
+    updateInProjects({ ...proj, objectives: newObjectives, progress: newProgress, status: newStatus, updatedAt: new Date().toISOString() });
 
     try {
       await api.updateProject(projectId, {
@@ -196,7 +179,7 @@ export default function ResearchPage() {
       toast.success('目标已删除');
     } catch {
       // Revert on error
-      setProjects(prev => prev.map(p => p.id === projectId ? proj : p));
+      updateInProjects(proj);
       toast.error('删除目标失败');
     }
   };
@@ -206,14 +189,14 @@ export default function ResearchPage() {
     if (!proj) return;
 
     // Optimistic update
-    setProjects(prev => prev.filter(p => p.id !== projectId));
+    removeFromProjects(projectId);
 
     try {
       await api.deleteProject(projectId);
       toast.success('项目已删除');
     } catch {
       // Revert on error
-      if (proj) setProjects(prev => [proj, ...prev]);
+      if (proj) addToProjects(proj);
       toast.error('删除项目失败');
     }
   };
@@ -230,7 +213,7 @@ export default function ResearchPage() {
         paperIds: [],
       });
       if (res.success && res.data) {
-        setProjects(prev => [res.data, ...prev]);
+        addToProjects(res.data);
         setNewTitle('');
         setNewDesc('');
         setCreateOpen(false);
@@ -274,19 +257,13 @@ export default function ResearchPage() {
   const saveProjectPapers = async () => {
     if (!managingProject) return;
     const previous = projects.find(p => p.id === managingProject.id);
-    setProjects(prev => prev.map(p =>
-      p.id === managingProject.id
-        ? { ...p, paperIds: selectedPaperIds, relatedPaperIds: selectedPaperIds }
-        : p
-    ));
+    updateInProjects({ ...managingProject, paperIds: selectedPaperIds, relatedPaperIds: selectedPaperIds });
     try {
       await api.updateProject(managingProject.id, { paperIds: selectedPaperIds });
       toast.success('关联文献已更新');
       setManagePapersOpen(false);
     } catch {
-      if (previous) {
-        setProjects(prev => prev.map(p => p.id === managingProject.id ? previous : p));
-      }
+      if (previous) updateInProjects(previous);
       toast.error('更新失败');
     }
   };
@@ -297,14 +274,12 @@ export default function ResearchPage() {
     const currentIds = getProjectPaperIds(project);
     const newIds = currentIds.filter(id => id !== paperId);
     const previous = project;
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, paperIds: newIds, relatedPaperIds: newIds } : p
-    ));
+    updateInProjects({ ...project, paperIds: newIds, relatedPaperIds: newIds });
     try {
       await api.updateProject(projectId, { paperIds: newIds });
       toast.success('文献已移除');
     } catch {
-      setProjects(prev => prev.map(p => p.id === projectId ? previous : p));
+      updateInProjects(previous);
       toast.error('移除失败');
     }
   };

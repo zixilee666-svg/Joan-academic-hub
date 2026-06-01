@@ -25,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import AnimatedPage from '@/components/shared/AnimatedPage';
 import EmptyState from '@/components/shared/EmptyState';
 import { api } from '@/lib/api';
+import { useDataStore } from '@/store/dataStore';
 import type { Library, Paper, Material } from '@/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { ImportFromMaterialsDialog, ImportMaterialsButton } from '@/components/shared/ImportFromMaterials';
@@ -43,11 +44,10 @@ const LIBRARY_ICONS = [
 ];
 
 export default function MyLibraryPage() {
+  const { papers: allPapers, papersLoaded, ensurePapers, removeFromPapers, updateInPapers, restorePapers } = useDataStore();
   const [libraries, setLibraries] = useState<Library[]>([]);
-  const [allPapers, setAllPapers] = useState<Paper[]>([]);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>('lib-all');
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
 
   // Create/Edit dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -86,7 +86,7 @@ export default function MyLibraryPage() {
   const handleDeletePaper = useCallback(async (paperId: string) => {
     if (!confirm('确定要删除这篇文献吗？此操作不可撤销。')) return;
     const previous = allPapers;
-    setAllPapers(prev => prev.filter(p => p.id !== paperId));
+    removeFromPapers(paperId);
     setLibraries(prev => prev.map(l => ({
       ...l,
       paperIds: (l.paperIds || []).filter(id => id !== paperId),
@@ -95,10 +95,10 @@ export default function MyLibraryPage() {
       await api.deletePaper(paperId);
       toast.success('文献已删除');
     } catch {
-      setAllPapers(previous);
+      restorePapers(previous);
       toast.error('删除失败');
     }
-  }, [allPapers]);
+  }, [allPapers, removeFromPapers, restorePapers]);
 
   const handleEditPaper = useCallback((paper: Paper) => {
     setEditingPaper(paper);
@@ -106,21 +106,16 @@ export default function MyLibraryPage() {
   }, []);
 
   const handlePaperUpdated = useCallback((updated: Paper) => {
-    setAllPapers(prev => prev.map(p => p.id === updated.id ? updated : p));
-  }, []);
+    updateInPapers(updated);
+  }, [updateInPapers]);
 
-  // Load libraries, papers and materials
+  // Load libraries and materials (papers via dataStore cache)
   const loadLibraries = useCallback(async () => {
-    setLoading(true);
     try {
-      const [libRes, paperRes, matRes] = await Promise.all([
+      const [libRes, matRes] = await Promise.all([
         api.getLibraries(),
-        api.getPapers({ pageSize: 200 }),
         api.getMaterials(),
       ]);
-      if (paperRes.success && paperRes.data) {
-        setAllPapers(paperRes.data);
-      }
       if (libRes.success && libRes.data) {
         setLibraries(libRes.data);
         if (!selectedLibraryId || !libRes.data.find(l => l.id === selectedLibraryId)) {
@@ -132,18 +127,18 @@ export default function MyLibraryPage() {
         setMaterials(Array.isArray(matData) ? matData : (matData.data || []));
       }
     } catch {
-      // Fallback: empty state
       setLibraries([{
         id: 'lib-all', name: '全部文献', color: '#3d5a80',
         icon: 'Library', paperIds: [],
         createdAt: new Date().toISOString(), isDefault: true,
       }]);
-    } finally {
-      setLoading(false);
     }
   }, [selectedLibraryId]);
 
-  useEffect(() => { loadLibraries(); }, [loadLibraries]);
+  useEffect(() => {
+    ensurePapers();
+    loadLibraries();
+  }, [ensurePapers, loadLibraries]);
 
   // Selected library
   const selectedLibrary = useMemo(
@@ -249,7 +244,7 @@ export default function MyLibraryPage() {
 
     const previous = allPapers;
     // Optimistic update
-    setAllPapers(prev => prev.filter(p => !selectedBatchIds.includes(p.id)));
+    selectedBatchIds.forEach(id => removeFromPapers(id));
     setLibraries(prev => prev.map(l => ({
       ...l,
       paperIds: (l.paperIds || []).filter(id => !selectedBatchIds.includes(id)),
@@ -261,10 +256,10 @@ export default function MyLibraryPage() {
       await Promise.all(selectedBatchIds.map(id => api.deletePaper(id)));
       toast.success(`已删除 ${selectedBatchIds.length} 篇文献`);
     } catch {
-      setAllPapers(previous);
+      restorePapers(previous);
       toast.error('批量删除失败');
     }
-  }, [selectedBatchIds, allPapers]);
+  }, [selectedBatchIds, allPapers, removeFromPapers, restorePapers]);
 
   // 批量移动 - 打开对话框
   const openBatchMoveDialog = useCallback(() => {
@@ -365,17 +360,15 @@ export default function MyLibraryPage() {
 
     const previous = allPapers;
     // Optimistic update
-    setAllPapers(prev => prev.map(p => {
-      if (!selectedBatchIds.includes(p.id)) return p;
-      const currentTags = p.tags || [];
-      let newTags: string[];
-      if (batchTagMode === 'add') {
-        newTags = [...new Set([...currentTags, ...tags])];
-      } else {
-        newTags = currentTags.filter(t => !tags.includes(t));
-      }
-      return { ...p, tags: newTags };
-    }));
+    selectedBatchIds.forEach(id => {
+      const paper = allPapers.find(p => p.id === id);
+      if (!paper) return;
+      const currentTags = paper.tags || [];
+      const newTags = batchTagMode === 'add'
+        ? [...new Set([...currentTags, ...tags])]
+        : currentTags.filter(t => !tags.includes(t));
+      updateInPapers({ ...paper, tags: newTags });
+    });
     setBatchTagDialogOpen(false);
     setSelectedBatchIds([]);
     setIsBatchMode(false);
@@ -394,10 +387,10 @@ export default function MyLibraryPage() {
       );
       toast.success(`已${batchTagMode === 'add' ? '添加' : '移除'}标签到 ${selectedBatchIds.length} 篇文献`);
     } catch {
-      setAllPapers(previous);
+      restorePapers(previous);
       toast.error('批量标签失败');
     }
-  }, [selectedBatchIds, batchTagInput, batchTagMode, allPapers]);
+  }, [selectedBatchIds, batchTagInput, batchTagMode, allPapers, updateInPapers, restorePapers]);
 
   // Open create dialog
   const openCreateDialog = () => {
@@ -508,6 +501,8 @@ export default function MyLibraryPage() {
     e.preventDefault();
     setContextMenu({ library: lib, x: e.clientX, y: e.clientY });
   };
+
+  const loading = !papersLoaded;
 
   return (
     <AnimatedPage>

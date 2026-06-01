@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import AnimatedPage from '@/components/shared/AnimatedPage';
 import EmptyState from '@/components/shared/EmptyState';
 import { api } from '@/lib/api';
+import { useDataStore } from '@/store/dataStore';
 import type { Paper, Material } from '@/types';
 import { ImportFromMaterialsDialog, ImportMaterialsButton } from '@/components/shared/ImportFromMaterials';
 import { EditPaperDialog } from '@/components/shared/EditPaperDialog';
@@ -76,8 +77,7 @@ type SortDir = 'asc' | 'desc';
 
 export default function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [papers, setPapers] = useState<Paper[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { papers, papersLoaded, ensurePapers, invalidatePapers, removeFromPapers, updateInPapers, addToPapers } = useDataStore();
   const [refreshing, setRefreshing] = useState(false);
 
   // URL同步状态 - 从URL读取初始值
@@ -153,85 +153,67 @@ export default function LibraryPage() {
     updateUrl({ view: mode });
   };
 
-  // Load papers and materials from API on mount
+  // Load materials + ensure papers cached
   useEffect(() => {
     let cancelled = false;
-    const loadData = async () => {
+    const loadMats = async () => {
       try {
-        const [paperRes, matRes] = await Promise.all([
-          api.getPapers({ pageSize: 200 }),
-          api.getMaterials(),
-        ]);
-        if (!cancelled) {
-          if (paperRes.success && paperRes.data) {
-            setPapers(paperRes.data);
-          }
-          if (matRes.success && matRes.data) {
-            const matData = (matRes as any).data || [];
-            setMaterials(Array.isArray(matData) ? matData : (matData.data || []));
-          }
-          setLoading(false);
+        const matRes = await api.getMaterials();
+        if (!cancelled && matRes.success && (matRes as any).data) {
+          const matData = (matRes as any).data;
+          setMaterials(Array.isArray(matData) ? matData : (matData.data || []));
         }
       } catch (e) {
-        console.error('[LibraryPage] Failed to load data:', e);
-        if (!cancelled) setLoading(false);
+        console.error('[LibraryPage] Failed to load materials:', e);
       }
     };
-    loadData();
+    ensurePapers();
+    loadMats();
     return () => { cancelled = true; };
-  }, []);
+  }, [ensurePapers]);
 
   // 刷新数据
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await api.getPapers({ pageSize: 200 });
-      if (res.success && res.data) {
-        setPapers(res.data);
-        toast.success('文献库已刷新');
-      }
+      invalidatePapers();
+      await ensurePapers();
+      toast.success('文献库已刷新');
     } catch {
       toast.error('刷新失败');
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [invalidatePapers, ensurePapers]);
 
   // 收藏切换（乐观更新）
   const handleToggleFavorite = useCallback(async (paperId: string, currentState: boolean) => {
-    // 乐观更新：立即更新UI
-    setPapers(prev =>
-      prev.map(p =>
-        p.id === paperId ? { ...p, isFavorited: !currentState } : p
-      )
-    );
-
+    const paper = papers.find(p => p.id === paperId);
+    if (!paper) return;
+    // 乐观更新：立即更新缓存
+    updateInPapers({ ...paper, isFavorited: !currentState });
     try {
       await api.toggleFavorite(paperId);
     } catch {
       // 失败时回滚
-      setPapers(prev =>
-        prev.map(p =>
-          p.id === paperId ? { ...p, isFavorited: currentState } : p
-        )
-      );
+      updateInPapers({ ...paper, isFavorited: currentState });
       toast.error('操作失败');
     }
-  }, []);
+  }, [papers, updateInPapers]);
 
   // 删除论文
   const handleDeletePaper = useCallback(async (paperId: string) => {
     if (!confirm('确定要删除这篇文献吗？此操作不可撤销。')) return;
-    const previous = papers;
-    setPapers(prev => prev.filter(p => p.id !== paperId));
+    const backup = papers.find(p => p.id === paperId);
+    removeFromPapers(paperId);
     try {
       await api.deletePaper(paperId);
       toast.success('文献已删除');
     } catch {
-      setPapers(previous);
+      if (backup) addToPapers(backup);
       toast.error('删除失败');
     }
-  }, [papers]);
+  }, [papers, removeFromPapers, addToPapers]);
 
   // 编辑论文
   const handleEditPaper = useCallback((paper: Paper) => {
@@ -240,8 +222,8 @@ export default function LibraryPage() {
   }, []);
 
   const handlePaperUpdated = useCallback((updated: Paper) => {
-    setPapers(prev => prev.map(p => p.id === updated.id ? updated : p));
-  }, []);
+    updateInPapers(updated);
+  }, [updateInPapers]);
 
   // All unique tags from loaded papers
   const allTags = useMemo(
@@ -301,6 +283,9 @@ export default function LibraryPage() {
       handleSortChange(key);
     }
   };
+
+  // Loading = papers not yet cached
+  const loading = !papersLoaded;
 
   // Loading skeleton
   if (loading) {

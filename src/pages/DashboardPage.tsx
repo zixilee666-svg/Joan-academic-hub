@@ -19,6 +19,7 @@ import AnimatedPage from '@/components/shared/AnimatedPage';
 import { AnimatedCounter, formatNumber } from '@/components/shared/AnimatedCounter';
 import JoanQuote from '@/components/shared/JoanQuote';
 import { api } from '@/lib/api';
+import { useDataStore } from '@/store/dataStore';
 import type { Paper, Project, ReadingStats } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -525,41 +526,27 @@ function DashboardSkeleton() {
 
 // ========== 主页面 ==========
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
+  const { papers, projects, papersLoaded, projectsLoaded, ensurePapers, ensureProjects, invalidateAll } = useDataStore();
+  const [statsLoaded, setStatsLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<ReadingStats | null>(null);
-  const [papers, setPapers] = useState<Paper[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
 
   const loadData = useCallback(async () => {
-    if (!refreshing) setLoading(true);
     try {
-      // 并行加载所有数据
-      const [statsRes, papersRes, projectsRes] = await Promise.all([
-        api.getReadingStats(),
-        api.getPapers({ pageSize: 200 }),
-        api.getProjects(),
-      ]);
-
+      const statsRes = await api.getReadingStats();
       if (statsRes.success && statsRes.data) {
         setStats(statsRes.data);
       }
-
-      if (papersRes.success && papersRes.data) {
-        setPapers(papersRes.data);
-      }
-
-      if (projectsRes.success && projectsRes.data) {
-        setProjects(projectsRes.data);
-      }
+      setStatsLoaded(true);
+      // ensurePapers/ensureProjects 如果已缓存则立即返回
+      await Promise.all([ensurePapers(), ensureProjects()]);
     } catch (err) {
       console.error('[Dashboard] Failed to load data:', err);
       toast.error('加载数据失败，请刷新重试');
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
-  }, [refreshing]);
+  }, [ensurePapers, ensureProjects]);
 
   useEffect(() => {
     loadData();
@@ -568,9 +555,11 @@ export default function DashboardPage() {
   // 刷新数据
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    invalidateAll();
+    setStatsLoaded(false);
     await loadData();
     toast.success('数据已刷新');
-  }, [loadData]);
+  }, [loadData, invalidateAll]);
 
   // 计算衍生数据
   const recentPapers = papers
@@ -580,6 +569,8 @@ export default function DashboardPage() {
 
   const favorites = papers.filter((p) => p.isFavorited);
   const allTags = Array.from(new Set(papers.flatMap((p) => p.tags)));
+
+  const loading = !statsLoaded || !papersLoaded || !projectsLoaded;
 
   if (loading) {
     return (

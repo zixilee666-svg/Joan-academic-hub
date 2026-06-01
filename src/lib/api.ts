@@ -1368,7 +1368,7 @@ class ApiClient {
 
   /** Mock 请求：纯本地处理，无网络 IO */
   private async mockRequest<T>(config: RequestConfig): Promise<T> {
-    await mockDelay(100 + Math.random() * 150);
+    await mockDelay(10 + Math.random() * 20); // 轻量延时，模拟网络 RTT
     let body: any = undefined;
     if (config.body && typeof config.body === 'string') {
       try { body = JSON.parse(config.body); } catch { /* ignore */ }
