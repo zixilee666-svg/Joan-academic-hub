@@ -1,8 +1,9 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource/playfair-display/400.css';
-@import '@fontsource/playfair-display/500.css';
-@import '@fontsource/playfair-display/600.css';
-@import '@fontsource/playfair-display/700.css';
+@import './styles/fonts.css';
+/* Playfair Display — 仅 latin 子集 */
+@import '@fontsource/playfair-display/latin-400.css';
+@import '@fontsource/playfair-display/latin-500.css';
+@import '@fontsource/playfair-display/latin-600.css';
+@import '@fontsource/playfair-display/latin-700.css';
 
 @tailwind base;
 @tailwind components;

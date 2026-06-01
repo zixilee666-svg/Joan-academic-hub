@@ -18,6 +18,13 @@ export default defineConfig({
     },
   },
   build: {
+    modulePreload: {
+      resolveDependencies: (_filename, deps, { hostType }) => {
+        // 仅预加载 react-vendor，其他 chunk 按需加载
+        if (hostType !== 'html') return deps;
+        return deps.filter((d: string) => d.includes('react-vendor'));
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks(id: string) {
