@@ -183,27 +183,26 @@ async function handleParsePaper(request) {
     const apiKey = modelConfig?.apiKey || '';
     const model = modelConfig?.model || 'deepseek-chat';
 
-    const systemPrompt = `You are a scholarly paper metadata extractor. Given the text of a paper (title, authors, abstract section), extract metadata and output ONLY a valid JSON object.
+    const systemPrompt = `You are a scholarly paper metadata extractor. Given paper text (title, authors, abstract), extract metadata. Output ONLY a valid JSON object.
 
-Required JSON fields:
-- "title": string, paper title
-- "authors": string array, author full names
-- "year": number, publication year
-- "month": number or null, publication month 1-12
-- "venue": string, journal or conference name
-- "volume": string, volume number
-- "issue": string, issue number
-- "pages": string, page range e.g. "123-145"
-- "doi": string, DOI identifier
-- "url": string, paper URL if present
-- "abstract": string, the abstract text
-- "keywords": string array, keywords if present
-- "references": array of { "title": string, "authors": string[], "year": number, "venue": string }
+Fields:
+- "title": string
+- "authors": string[]
+- "year": number
+- "month": number|null
+- "venue": string (journal/conference)
+- "volume": string
+- "issue": string
+- "pages": string (e.g. "123-145")
+- "doi": string
+- "url": string
+- "abstract": string
+- "keywords": string[]
 
-Output rules:
-1. Output ONLY the JSON object, no markdown, no explanation, no code fences.
-2. If a field cannot be found, use empty string "" or empty array [] or null.
-3. The JSON must be valid and parseable.`;
+Rules:
+1. ONLY output the JSON object — no markdown, no code fences, no explanation.
+2. Missing fields → "", [], or null.
+3. Keep the abstract to at most 3 sentences if long.`;
 
     // 只发送前 3000 字符（标题+作者+摘要），避免全文噪音
     const truncatedText = text.slice(0, 3000);
@@ -215,7 +214,7 @@ Output rules:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { stream: false, temperature: 0.05, maxTokens: 1024, timeout: 55000 }
+      { stream: false, temperature: 0.05, maxTokens: 600, timeout: 30000 }
     );
 
     const data = await res.json();

@@ -1731,7 +1731,7 @@ class ApiClient {
       };
     }>('/api-ai/parse-paper', {
       method: 'POST',
-      timeout: 60000,
+      timeout: 45000,
       body: JSON.stringify({ text, modelConfig }),
     });
   }
