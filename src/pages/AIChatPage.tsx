@@ -583,7 +583,8 @@ export default function AIChatPage() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all shrink-0"
+                      className="p-1 rounded hover:bg-destructive/10 text-muted-foreground/50 hover:text-destructive transition-all shrink-0"
+                      title="删除此对话"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -623,6 +624,17 @@ export default function AIChatPage() {
                 <Button size="sm" variant="ghost" onClick={clearChat} className="gap-1 text-xs">
                   <RefreshCw className="h-3.5 w-3.5" />
                   清空
+                </Button>
+              )}
+              {activeConvId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteConversation(activeConvId)}
+                  className="gap-1 text-xs text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  删除对话
                 </Button>
               )}
             </div>
