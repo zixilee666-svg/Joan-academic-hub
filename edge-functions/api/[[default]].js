@@ -1810,6 +1810,18 @@ const DEFAULT_SETTINGS = {
     projectUpdates: true,
     pointsChange: false,
   },
+  // External tools — synced across devices
+  zoteroUserId: '',
+  zoteroApiKey: '',
+  semanticScholarApiKey: '',
+  githubToken: '',
+  githubUsername: '',
+  imaApiKey: '',
+  imaEndpoint: '',
+  crawlabEndpoint: '',
+  crawlabToken: '',
+  aiModels: [],
+  defaultAiModelId: '',
 };
 
 async function handleGetSettings(request, JWT_SECRET) {

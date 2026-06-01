@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Scale, Eye, EyeOff, ArrowRight, LogIn } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { useSettingsStore } from '@/store/userStore'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,17 @@ export default function LoginPage() {
       if (res.success && res.data) {
         useAuthStore.getState().setUser(res.data.user)
         useAuthStore.getState().setToken(res.data.token)
+
+        // Pull cloud-synced settings (external tools, AI models, etc.)
+        try {
+          const settingsRes = await api.getSettings();
+          if (settingsRes.success && settingsRes.data) {
+            useSettingsStore.getState().loadFromBackend(settingsRes.data as any);
+          }
+        } catch {
+          // Non-critical: fall back to localStorage defaults
+        }
+
         setJustLoggedIn(true)
       } else {
         // TypeScript无法自动收窄ApiResponse联合类型，使用'in'检查错误属性

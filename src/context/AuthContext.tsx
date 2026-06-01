@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useCallback, useEffect } 
 import type { User } from '@/types';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { useSettingsStore } from '@/store/userStore';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -93,6 +94,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [zustandUser, zustandToken]);
 
+  // On initial auth restore (e.g. page refresh with stored token), pull cloud-synced settings
+  useEffect(() => {
+    if (state.isAuthenticated && state.token) {
+      api.getSettings().then(res => {
+        if (res.success && res.data) {
+          useSettingsStore.getState().loadFromBackend(res.data as any);
+        }
+      }).catch(() => {
+        // Non-critical: settings will fall back to localStorage defaults
+      });
+    }
+  }, [state.isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
@@ -102,6 +116,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         useAuthStore.getState().setUser(res.data.user);
         useAuthStore.getState().setToken(res.data.token);
         dispatch({ type: 'LOGIN', payload: res.data });
+
+        // Pull cloud-synced settings (external tools, AI models, etc.) from backend KV
+        try {
+          const settingsRes = await api.getSettings();
+          if (settingsRes.success && settingsRes.data) {
+            useSettingsStore.getState().loadFromBackend(settingsRes.data as any);
+          }
+        } catch {
+          // Non-critical: settings will fall back to localStorage defaults
+        }
+
         return { success: true };
       }
       return { success: false, error: '登录失败' };

@@ -30,6 +30,7 @@ interface UserSettingsState extends ExternalApiConfig {
   setNotification: (key: keyof NotificationSettings, value: boolean) => void;
   setZoteroConfig: (userId: string, apiKey: string) => void;
   setExternalApiConfig: (config: Partial<ExternalApiConfig>) => void;
+  loadFromBackend: (data: Partial<UserSettingsState>) => void;
   setAiModels: (models: AIModelConfig[]) => void;
   addAiModel: (model: AIModelConfig) => void;
   removeAiModel: (id: string) => void;
@@ -92,9 +93,18 @@ export const useSettingsStore = create<UserSettingsState>()(
 
       setZoteroConfig: (userId, apiKey) => set({ zoteroUserId: userId, zoteroApiKey: apiKey }),
 
-      setExternalApiConfig: (config) => set((state) => ({ ...state, ...config })),
+  setExternalApiConfig: (config) => set((state) => ({ ...state, ...config })),
 
-      setAiModels: (models) => set({ aiModels: models }),
+  loadFromBackend: (data: Partial<UserSettingsState>) =>
+        set((state) => ({
+          ...state,
+          ...data,
+          // Merge aiModels: backend data takes priority, but keep existing if backend returns empty
+          aiModels: (data.aiModels && data.aiModels.length > 0) ? data.aiModels : state.aiModels,
+          defaultAiModelId: data.defaultAiModelId || state.defaultAiModelId,
+        })),
+
+  setAiModels: (models) => set({ aiModels: models }),
 
       addAiModel: (model) =>
         set((state) => ({ aiModels: [...state.aiModels, model] })),

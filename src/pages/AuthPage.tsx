@@ -7,6 +7,8 @@ import { motion } from 'framer-motion';
 import { Scale, Eye, EyeOff, ArrowRight, LogIn, XCircle, Lock } from 'lucide-react';
 import { authService } from '@/services/authService';
 import { useAuthStore } from '@/store';
+import { api } from '@/lib/api';
+import { useSettingsStore } from '@/store/userStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,6 +46,17 @@ export default function AuthPage() {
       if (res.success && res.data) {
         useAuthStore.getState().setToken(res.data.token);
         useAuthStore.getState().setUser(res.data.user);
+
+        // Pull cloud-synced settings (external tools, AI models, etc.)
+        try {
+          const settingsRes = await api.getSettings();
+          if (settingsRes.success && settingsRes.data) {
+            useSettingsStore.getState().loadFromBackend(settingsRes.data as any);
+          }
+        } catch {
+          // Non-critical: fall back to localStorage defaults
+        }
+
         navigate('/gallery', { replace: true });
       } else {
         setLoginError(res.error || '登录失败');

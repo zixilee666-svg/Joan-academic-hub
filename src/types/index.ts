@@ -213,6 +213,18 @@ export interface UserSettings {
     projectUpdates?: boolean;
     pointsChange?: boolean;
   };
+  // External tools — synced across devices via backend KV
+  zoteroUserId?: string;
+  zoteroApiKey?: string;
+  semanticScholarApiKey?: string;
+  githubToken?: string;
+  githubUsername?: string;
+  imaApiKey?: string;
+  imaEndpoint?: string;
+  crawlabEndpoint?: string;
+  crawlabToken?: string;
+  aiModels?: AIModelConfig[];
+  defaultAiModelId?: string;
 }
 
 // ----- 阅读统计 -----

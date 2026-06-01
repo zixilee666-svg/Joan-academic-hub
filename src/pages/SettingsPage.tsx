@@ -37,6 +37,7 @@ function SettingsContent() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [savingExternalTools, setSavingExternalTools] = useState(false);
 
   // Password visibility toggles
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -134,6 +135,32 @@ function SettingsContent() {
       toast.error(message);
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  // Save external tools to API (enables cross-device sync)
+  const saveExternalTools = async () => {
+    setSavingExternalTools(true);
+    try {
+      await api.updateSettings({
+        theme: mode,
+        zoteroUserId: settings.zoteroUserId,
+        zoteroApiKey: settings.zoteroApiKey,
+        semanticScholarApiKey: settings.semanticScholarApiKey,
+        githubToken: settings.githubToken,
+        githubUsername: settings.githubUsername,
+        imaApiKey: settings.imaApiKey,
+        imaEndpoint: settings.imaEndpoint,
+        crawlabEndpoint: settings.crawlabEndpoint,
+        crawlabToken: settings.crawlabToken,
+        aiModels: settings.aiModels,
+        defaultAiModelId: settings.defaultAiModelId,
+      } as any);
+      toast.success('外部工具配置已保存到云端，其他设备登录后自动同步');
+    } catch {
+      toast.error('保存失败，请重试');
+    } finally {
+      setSavingExternalTools(false);
     }
   };
 
@@ -847,6 +874,23 @@ function SettingsContent() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Save External Tools to Cloud */}
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+              <div>
+                <p className="text-sm font-medium">同步到云端</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  将外部工具配置（API Keys、AI 模型等）保存到云端，其他设备登录后自动同步
+                </p>
+              </div>
+              <Button
+                onClick={saveExternalTools}
+                disabled={savingExternalTools}
+                size="sm"
+              >
+                {savingExternalTools ? '保存中...' : '保存配置'}
+              </Button>
+            </div>
           </TabsContent>
 
           {/* About Tab */}
