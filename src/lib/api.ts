@@ -61,6 +61,71 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ---- arXiv 多域名备用 fetch（带重试+指数退避）----
+const ARXIV_DOMAINS = [
+  'https://export.arxiv.org',
+  'https://arxiv.org',
+];
+const ARXIV_TIMEOUT_MS = 30000; // 30s，与 arxiv-reader skill 的 requests timeout 一致
+
+async function fetchArxivWithRetry(
+  query: string,
+  start: number,
+  maxResults: number,
+  signal?: AbortSignal
+): Promise<string> {
+  const path = `/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}&sortBy=relevance&sortOrder=descending`;
+  const headers = {
+    'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)',
+    'Accept': 'application/atom+xml,application/xml,text/xml,*/*',
+  };
+
+  let lastError: Error | null = null;
+
+  for (let d = 0; d < ARXIV_DOMAINS.length; d++) {
+    const domain = ARXIV_DOMAINS[d];
+    const maxAttempts = d === 0 ? 2 : 1; // 主域名重试2次，备域名1次
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      try {
+        const url = domain + path;
+        console.log(`[fetchArxiv] Trying ${domain}, attempt ${attempt + 1}/${maxAttempts}`);
+
+        const response = await fetch(url, {
+          headers,
+          signal: signal || AbortSignal.timeout(ARXIV_TIMEOUT_MS),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+
+        const text = await response.text();
+        console.log(`[fetchArxiv] Success from ${domain} (${text.length} chars)`);
+        return text;
+      } catch (error) {
+        lastError = error as Error;
+        const errMsg = (error as Error).message || String(error);
+        console.warn(`[fetchArxiv] Failed ${domain} attempt ${attempt + 1}:`, errMsg);
+
+        if (signal?.aborted) throw error;
+
+        // 指数退避：domain index + attempt 决定延迟，最大 4 秒
+        if (attempt < maxAttempts - 1 || d < ARXIV_DOMAINS.length - 1) {
+          const backoff = Math.min(1000 * Math.pow(2, attempt + d), 4000);
+          await delay(backoff);
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('All arXiv domains failed');
+}
+
 // ---- 请求拦截器类型 ----
 type RequestInterceptor = (config: RequestConfig) => RequestConfig | Promise<RequestConfig>;
 type ResponseInterceptor = (response: Response, config: RequestConfig) => Response | Promise<Response>;
@@ -1634,7 +1699,7 @@ class ApiClient {
   }
 
   // ---- Search ----
-  async searchArxiv(query: string, start = 0, maxResults = 10) {
+  async searchArxiv(query: string, start = 0, maxResults = 5, signal?: AbortSignal) {
     // Mock 模式下走原有 Mock 逻辑
     if (IS_MOCK) {
       return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number } }>(
@@ -1642,24 +1707,13 @@ class ApiClient {
       );
     }
 
-    // 真实模式：前端直连 arXiv API（绕过 EdgeOne Pages Edge Function 网络沙箱限制）
+    // 真实模式：前端直连 arXiv API（多域名备用+重试，绕过 EdgeOne Pages Edge Function 网络沙箱限制）
     if (!query.trim()) {
       return { success: true, data: { data: [], total: 0, offset: start, limit: maxResults } } as { success: boolean; data: { data: any[]; total: number; offset: number; limit: number } };
     }
 
-    const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}&sortBy=relevance&sortOrder=descending`;
-
     try {
-      const response = await fetch(arxivUrl, {
-        headers: { 'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)' },
-        signal: AbortSignal.timeout(20000),
-      });
-
-      if (!response.ok) {
-        throw new ApiError(ApiErrorCode.SERVER_ERROR, `arXiv API error: ${response.status} ${response.statusText}`);
-      }
-
-      const xmlText = await response.text();
+      const xmlText = await fetchArxivWithRetry(query, start, maxResults, signal);
 
       // 解析 arXiv Atom XML
       const papers: any[] = [];
@@ -1694,7 +1748,7 @@ class ApiClient {
         },
       };
     } catch (error) {
-      console.error('[searchArxiv] Direct fetch error:', error);
+      console.error('[searchArxiv] All retries failed:', error);
       throw handleApiError(error);
     }
   }

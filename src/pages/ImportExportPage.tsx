@@ -1,7 +1,7 @@
 // ========================================
 // ImportExportPage — 批量导入导出
 // ========================================
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Upload, Download, FileText, FileSpreadsheet, Search,
   Atom, BookOpen, AlertCircle, CheckCircle2, Loader2,
@@ -46,12 +46,31 @@ export default function ImportExportPage() {
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // AbortController for cancelling in-flight search requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   // Search handlers — uses API
   const settings = useSettingsStore();
 
   const handleSearch = useCallback(async () => {
     if (searchSource === 'zotero') return;
     if (!searchQuery.trim()) return;
+
+    // Cancel any in-flight request before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     setIsSearching(true);
     setSearchResults([]);
     setSearchTotal(0);
@@ -61,7 +80,7 @@ export default function ImportExportPage() {
     try {
       let results: any[] = [];
       if (searchSource === 'arxiv') {
-        const res = await api.searchArxiv(searchQuery, 0, 10);
+        const res = await api.searchArxiv(searchQuery, 0, 5, abortControllerRef.current.signal);
         const resultData = res.data as any;
         if (resultData && resultData.data && Array.isArray(resultData.data)) {
           // New paginated structure
@@ -140,6 +159,12 @@ export default function ImportExportPage() {
     } catch (err: any) {
       console.error('[Import] Search error:', err);
       const msg = err.message || '';
+
+      // 请求被取消（用户切换搜索源或快速输入），静默处理
+      if (msg.includes('Aborted') || msg.includes('abort') || msg.includes('取消')) {
+        setIsSearching(false);
+        return;
+      }
 
       // 降级到演示数据（catch 块之前缺失此逻辑，导致空白页）
       const fallbackResults: SearchResult[] = [
@@ -221,7 +246,7 @@ export default function ImportExportPage() {
       const nextOffset = searchOffset + searchResults.length;
       let res: any;
       if (searchSource === 'arxiv') {
-        res = await api.searchArxiv(searchQuery, nextOffset, 10);
+        res = await api.searchArxiv(searchQuery, nextOffset, 5, abortControllerRef.current?.signal);
       } else {
         res = await api.searchSemanticScholar(searchQuery, nextOffset, 10, settings.semanticScholarApiKey);
       }
@@ -265,6 +290,11 @@ export default function ImportExportPage() {
       }
     } catch (err: any) {
       console.error('[Import] Load more error:', err);
+      // 请求被取消，静默处理
+      if (err.message?.includes('Aborted') || err.message?.includes('abort') || err.message?.includes('取消')) {
+        setIsLoadingMore(false);
+        return;
+      }
       // 降级：生成 Demo 数据补充
       const demoOffset = searchOffset + searchResults.length;
       const demoResults = [
