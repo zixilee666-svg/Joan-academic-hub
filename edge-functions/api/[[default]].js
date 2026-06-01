@@ -2035,6 +2035,177 @@ async function handleBatchImport(request, JWT_SECRET) {
 }
 
 // ============================================================
+// 学术搜索代理处理函数
+// ============================================================
+
+/**
+ * 代理 arXiv API 搜索
+ * GET /api/search/arxiv?query=...&start=...&max_results=...
+ */
+async function handleSearchArxiv(request) {
+  try {
+    const url = new URL(request.url);
+    const query = url.searchParams.get('query') || '';
+    const start = url.searchParams.get('start') || '0';
+    const maxResults = url.searchParams.get('max_results') || '10';
+
+    if (!query.trim()) {
+      return apiError('Query is required', 400, 'VALIDATION_ERROR', request);
+    }
+
+    const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}&sortBy=relevance&sortOrder=descending`;
+
+    console.log('[SearchArxiv] Fetching:', arxivUrl);
+    const resp = await fetch(arxivUrl, {
+      headers: { 'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)' },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) {
+      console.error('[SearchArxiv] arXiv API error:', resp.status, resp.statusText);
+      return apiError('arXiv API request failed', 502, 'UPSTREAM_ERROR', request);
+    }
+
+    const xmlText = await resp.text();
+
+    // 解析 arXiv Atom XML → JSON
+    const papers = [];
+    const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+    let match;
+    while ((match = entryRegex.exec(xmlText)) !== null) {
+      const entry = match[1];
+      papers.push({
+        id: extractXmlTag(entry, 'id')?.replace('http://arxiv.org/abs/', '') || '',
+        title: extractXmlTag(entry, 'title')?.replace(/\s+/g, ' ').trim() || 'Untitled',
+        authors: extractXmlAuthors(entry),
+        year: extractXmlYear(entry),
+        summary: extractXmlTag(entry, 'summary')?.replace(/\s+/g, ' ').trim() || '',
+        venue: 'arXiv',
+        pdfUrl: extractXmlLink(entry, 'pdf') || '',
+        abstractUrl: extractXmlLink(entry, 'alternate') || '',
+        published: extractXmlTag(entry, 'published') || '',
+        updated: extractXmlTag(entry, 'updated') || '',
+      });
+    }
+
+    // 提取 totalResults
+    const totalMatch = xmlText.match(/<opensearch:totalResults[^>]*>(\d+)<\/opensearch:totalResults>/);
+    const total = totalMatch ? parseInt(totalMatch[1]) : papers.length;
+
+    return success({
+      data: papers,
+      total,
+      offset: parseInt(start),
+      limit: parseInt(maxResults),
+    }, 'arXiv search completed', request);
+  } catch (e) {
+    console.error('[SearchArxiv] Error:', e);
+    return apiError('arXiv search failed: ' + (e.message || 'Unknown error'), 500, 'SEARCH_ERROR', request);
+  }
+}
+
+/** 提取 XML 标签内容 */
+function extractXmlTag(xml, tag) {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return match ? match[1].trim() : null;
+}
+
+/** 提取 XML 中的作者列表 */
+function extractXmlAuthors(xml) {
+  const authors = [];
+  const regex = /<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g;
+  let m;
+  while ((m = regex.exec(xml)) !== null) {
+    authors.push(m[1].trim());
+  }
+  return authors;
+}
+
+/** 提取 XML 中的年份 */
+function extractXmlYear(xml) {
+  const published = extractXmlTag(xml, 'published');
+  if (published) {
+    const yearMatch = published.match(/^(\d{4})/);
+    if (yearMatch) return parseInt(yearMatch[1]);
+  }
+  return new Date().getFullYear();
+}
+
+/** 提取 XML 中的链接 */
+function extractXmlLink(xml, title) {
+  const regex = new RegExp(`<link[^>]*title="${title}"[^>]*href="([^"]*)"`, 'i');
+  const match = xml.match(regex);
+  return match ? match[1] : null;
+}
+
+/**
+ * 代理 Semantic Scholar API 搜索
+ * GET /api/search/semantic-scholar?query=...&offset=...&limit=...&apiKey=...
+ */
+async function handleSearchSemanticScholar(request) {
+  try {
+    const url = new URL(request.url);
+    const query = url.searchParams.get('query') || '';
+    const offset = url.searchParams.get('offset') || '0';
+    const limit = url.searchParams.get('limit') || '10';
+    const apiKey = url.searchParams.get('apiKey') || '';
+
+    if (!query.trim()) {
+      return apiError('Query is required', 400, 'VALIDATION_ERROR', request);
+    }
+
+    const fields = 'title,authors,year,venue,publicationVenue,abstract,externalIds,citationCount,url,openAccessPdf';
+    const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}&fields=${fields}`;
+
+    const headers = {
+      'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)',
+    };
+    if (apiKey) {
+      headers['x-api-key'] = apiKey;
+    }
+
+    console.log('[SearchSemanticScholar] Fetching:', ssUrl);
+    const resp = await fetch(ssUrl, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) {
+      console.error('[SearchSemanticScholar] API error:', resp.status, resp.statusText);
+      return apiError('Semantic Scholar API request failed', 502, 'UPSTREAM_ERROR', request);
+    }
+
+    const json = await resp.json();
+    const papers = (json.data || []).map(p => ({
+      id: p.paperId || p.externalIds?.DOI || p.externalIds?.ArXiv || '',
+      title: p.title || 'Untitled',
+      authors: (p.authors || []).map(a => a.name || ''),
+      year: p.year || null,
+      venue: (p.publicationVenue && p.publicationVenue.name) ? p.publicationVenue.name : (p.venue || ''),
+      abstract: p.abstract || '',
+      citations: p.citationCount || 0,
+      url: p.url || '',
+      doi: p.externalIds?.DOI || '',
+      pdfUrl: p.openAccessPdf?.url || '',
+      source: 'Semantic Scholar',
+    }));
+
+    const nextOffset = json.next ? offset + limit : null;
+
+    return success({
+      data: papers,
+      total: json.total || 0,
+      offset: parseInt(offset),
+      limit: parseInt(limit),
+      next: nextOffset,
+    }, 'Semantic Scholar search completed', request);
+  } catch (e) {
+    console.error('[SearchSemanticScholar] Error:', e);
+    return apiError('Semantic Scholar search failed: ' + (e.message || 'Unknown error'), 500, 'SEARCH_ERROR', request);
+  }
+}
+
+// ============================================================
 // 主入口 (Edge Functions 命名导出方式)
 // ============================================================
 
@@ -2158,6 +2329,14 @@ export async function onRequest(context) {
   // ========================================
   if (segments[0] === 'papers' && segments.length === 2 && segments[1] === 'batch-import' && request.method === 'POST') {
     return handleBatchImport(request, JWT_SECRET);
+  }
+
+  // ========================================
+  // 学术搜索代理（arXiv / Semantic Scholar）
+  // ========================================
+  if (segments[0] === 'search') {
+    if (segments[1] === 'arxiv' && request.method === 'GET') return handleSearchArxiv(request);
+    if (segments[1] === 'semantic-scholar' && request.method === 'GET') return handleSearchSemanticScholar(request);
   }
 
   // ========================================
