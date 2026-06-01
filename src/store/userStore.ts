@@ -96,13 +96,40 @@ export const useSettingsStore = create<UserSettingsState>()(
   setExternalApiConfig: (config) => set((state) => ({ ...state, ...config })),
 
   loadFromBackend: (data: Partial<UserSettingsState>) =>
-        set((state) => ({
-          ...state,
-          ...data,
-          // Merge aiModels: backend data takes priority, but keep existing if backend returns empty
-          aiModels: (data.aiModels && data.aiModels.length > 0) ? data.aiModels : state.aiModels,
-          defaultAiModelId: data.defaultAiModelId || state.defaultAiModelId,
-        })),
+        set((state) => {
+          // 外部工具字段：后端返回空字符串时保留本地值（后端可能是 DEFAULT_SETTINGS）
+          const externalFields = [
+            'zoteroUserId', 'zoteroApiKey',
+            'semanticScholarApiKey', 'githubToken', 'githubUsername',
+            'imaApiKey', 'imaEndpoint', 'crawlabEndpoint', 'crawlabToken',
+          ] as const;
+
+          const resolved: Partial<UserSettingsState> = {};
+          for (const key of externalFields) {
+            // 若后端显式传了字段（包括空字符串），用后端值；否则保留本地值
+            // 注意：后端若返回 { zoteroUserId: "" }（默认值），这里不区分"未传"和"空值"
+            // 因为 DEFAULT_SETTINGS 总是包含空字符串，所以保留本地值更安全
+            const backendVal = (data as any)[key];
+            const localVal = (state as any)[key];
+            (resolved as any)[key] = (backendVal !== undefined && backendVal !== '') ? backendVal : localVal;
+          }
+
+          console.log('[loadFromBackend] incoming data:', data);
+          console.log('[loadFromBackend] resolved external fields:', resolved);
+          console.log('[loadFromBackend] current state:', {
+            zoteroUserId: state.zoteroUserId,
+            zoteroApiKey: state.zoteroApiKey ? '***' : '',
+            aiModels: state.aiModels.length,
+          });
+
+          return {
+            ...state,
+            ...data,
+            ...resolved,
+            aiModels: (data.aiModels && data.aiModels.length > 0) ? data.aiModels : state.aiModels,
+            defaultAiModelId: data.defaultAiModelId || state.defaultAiModelId,
+          };
+        }),
 
   setAiModels: (models) => set({ aiModels: models }),
 

@@ -1840,7 +1840,11 @@ async function handleUpdateSettings(request, JWT_SECRET) {
     const body = await request.json();
     const current = await kvGetJson('users:settings:' + payload.userId) || { ...DEFAULT_SETTINGS };
     const updated = { ...current, ...body, updatedAt: new Date().toISOString() };
-    await kvSetJson('users:settings:' + payload.userId, updated);
+    const saved = await kvSetJson('users:settings:' + payload.userId, updated);
+    if (!saved) {
+      console.error('[Settings] kvSetJson failed for user:', payload.userId);
+      return apiError('Failed to save settings to KV storage', 500, 'KV_SAVE_FAILED', request);
+    }
     return success(updated, 'Settings updated', request);
   } catch (e) {
     return apiError('Invalid request', 400, 'BAD_REQUEST', request);
