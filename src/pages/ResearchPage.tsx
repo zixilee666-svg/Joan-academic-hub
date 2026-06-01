@@ -6,7 +6,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, FlaskConical, BookOpen, Clock, Target, ChevronRight,
-  CheckCircle2, Circle, Trash2, FolderOpen, Loader2, X, Settings2,
+  CheckCircle2, Circle, Trash2, FolderOpen, Loader2, X, Settings2, Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -43,6 +43,7 @@ export default function ResearchPage() {
   const [managePapersOpen, setManagePapersOpen] = useState(false);
   const [managingProject, setManagingProject] = useState<Project | null>(null);
   const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
+  const [paperSearchQuery, setPaperSearchQuery] = useState('');
 
   // Load projects and papers on mount
   const loadData = useCallback(async () => {
@@ -74,6 +75,29 @@ export default function ResearchPage() {
     if (filterStatus === 'all') return projects;
     return projects.filter((p) => p.status === filterStatus);
   }, [projects, filterStatus]);
+
+  // Filter papers in manage dialog by search query
+  const filteredPapers = useMemo(() => {
+    if (!paperSearchQuery.trim()) return papers;
+    const q = paperSearchQuery.toLowerCase().trim();
+    return papers.filter(p => {
+      // 标题
+      if (p.title?.toLowerCase().includes(q)) return true;
+      // 作者 (兼容 string[] 和 string)
+      const authorText = Array.isArray(p.authors) ? p.authors.join(' ') : (p.authors || '');
+      if (authorText.toLowerCase().includes(q)) return true;
+      // 年份
+      if (String(p.year || '').includes(q)) return true;
+      // 期刊/会议
+      if (p.venue?.toLowerCase().includes(q)) return true;
+      if (p.journal?.toLowerCase().includes(q)) return true;
+      // 摘要
+      if (p.abstract?.toLowerCase().includes(q)) return true;
+      // DOI
+      if (p.doi?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [papers, paperSearchQuery]);
 
   const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline'; color: string }> = {
     'in-progress': { label: '进行中', variant: 'default', color: 'bg-primary' },
@@ -237,6 +261,7 @@ export default function ResearchPage() {
   const openManagePapers = (project: Project) => {
     setManagingProject(project);
     setSelectedPaperIds(getProjectPaperIds(project));
+    setPaperSearchQuery('');
     setManagePapersOpen(true);
   };
 
@@ -641,13 +666,42 @@ export default function ResearchPage() {
                                   <p className="text-xs text-muted-foreground">
                                     选择要关联到「{managingProject?.name || managingProject?.title}」的文献
                                   </p>
+                                  {/* Search input */}
+                                  {papers.length > 0 && (
+                                    <div className="relative">
+                                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                      <Input
+                                        placeholder="按标题、作者、年份、期刊检索…"
+                                        value={paperSearchQuery}
+                                        onChange={(e) => setPaperSearchQuery(e.target.value)}
+                                        className="pl-9 pr-8 text-sm"
+                                      />
+                                      {paperSearchQuery && (
+                                        <button
+                                          onClick={() => setPaperSearchQuery('')}
+                                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                   {papers.length === 0 ? (
                                     <p className="text-sm text-muted-foreground text-center py-4">
                                       暂无可用文献
                                     </p>
+                                  ) : filteredPapers.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground text-center py-8">
+                                      未找到匹配「{paperSearchQuery}」的文献
+                                    </p>
                                   ) : (
                                     <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
-                                      {papers.map((paper) => (
+                                      {paperSearchQuery.trim() && (
+                                        <p className="text-[11px] text-muted-foreground px-1">
+                                          找到 {filteredPapers.length} 篇匹配文献
+                                        </p>
+                                      )}
+                                      {filteredPapers.map((paper) => (
                                         <label
                                           key={paper.id}
                                           className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -660,7 +714,7 @@ export default function ResearchPage() {
                                           <div className="min-w-0 flex-1">
                                             <p className="text-sm font-medium line-clamp-1">{paper.title}</p>
                                             <p className="text-[11px] text-muted-foreground mt-0.5">
-                                              {paper.authors.slice(0, 2).join(', ')} · {paper.year} · {paper.venue}
+                                              {Array.isArray(paper.authors) ? paper.authors.slice(0, 2).join(', ') : paper.authors} · {paper.year} · {paper.venue || paper.journal}
                                             </p>
                                           </div>
                                         </label>
