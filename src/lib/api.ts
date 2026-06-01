@@ -1711,29 +1711,41 @@ class ApiClient {
   }
 
   async parsePaper(text: string, modelConfig?: { baseUrl: string; apiKey: string; model: string }) {
-    return this.request<{
-      success: boolean;
-      data: {
-        title: string;
-        authors: string[];
-        year: number;
-        month: number | null;
-        venue: string;
-        volume: string;
-        issue: string;
-        pages: string;
-        doi: string;
-        url: string;
-        abstract: string;
-        keywords: string[];
-        citations: { bibtex: string; ieee: string; gb7714: string };
-        references: { title: string; authors: string[]; year: number; venue: string }[];
+    // Mock 模式：返回模拟解析结果
+    if (IS_MOCK) {
+      await mockDelay(200);
+      const sampleTitle = text.split('\n')[0] || 'Sample Paper Title';
+      return {
+        success: true,
+        data: {
+          title: sampleTitle.replace(/^#+\s*/, ''),
+          authors: ['Zhang Wei', 'Li Ming'],
+          year: new Date().getFullYear(),
+          month: null,
+          venue: 'arXiv preprint',
+          volume: '',
+          issue: '',
+          pages: '',
+          doi: '',
+          url: '',
+          abstract: 'This is a mock abstract for the paper. The actual parsing uses AI to extract metadata.',
+          keywords: ['machine learning', 'graph neural network'],
+          citations: {
+            bibtex: `@article{mock,\n  title = {Mock Paper},\n  author = {Zhang Wei and Li Ming},\n  year = {${new Date().getFullYear()}}\n}`,
+            ieee: `W. Zhang and M. Li, "Mock Paper," arXiv preprint, ${new Date().getFullYear()}.`,
+            gb7714: `Zhang Wei, Li Ming. Mock Paper[J]. arXiv preprint, ${new Date().getFullYear()}.`,
+          },
+          references: [],
+        },
       };
-    }>('/api-ai/parse-paper', {
-      method: 'POST',
-      timeout: 45000,
-      body: JSON.stringify({ text, modelConfig }),
-    });
+    }
+
+    // 生产模式：前端直连 AI API（绕过 Cloud Function 超时限制）
+    if (!modelConfig?.apiKey) {
+      return { success: false, error: '请先前往「设置 → 外部工具 → AI 模型」配置并选择默认模型', data: undefined as any };
+    }
+    const { parsePaperDirectly } = await import('@/lib/aiParser');
+    return parsePaperDirectly(text, modelConfig) as any;
   }
 
   // ---- Import/Export ----
