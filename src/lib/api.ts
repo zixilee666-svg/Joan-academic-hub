@@ -1211,6 +1211,42 @@ function handleMockRequest(path: string, method: string, body?: any): any {
   return { success: true };
 }
 
+// ---- 搜索辅助函数（前端直连外部 API，绕过 EdgeOne Pages Edge Function 网络沙箱） ----
+
+/** 提取 XML 标签内容 */
+function extractXmlTag(xml: string, tag: string): string | null {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return match ? match[1].trim() : null;
+}
+
+/** 提取 XML 中的作者列表 */
+function extractXmlAuthors(xml: string): string[] {
+  const authors: string[] = [];
+  const regex = /<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(xml)) !== null) {
+    authors.push(m[1].trim());
+  }
+  return authors;
+}
+
+/** 提取 XML 中的年份 */
+function extractXmlYear(xml: string): number {
+  const published = extractXmlTag(xml, 'published');
+  if (published) {
+    const yearMatch = published.match(/^(\d{4})/);
+    if (yearMatch) return parseInt(yearMatch[1], 10);
+  }
+  return new Date().getFullYear();
+}
+
+/** 提取 XML 中的链接 */
+function extractXmlLink(xml: string, title: string): string | null {
+  const regex = new RegExp(`<link[^>]*title="${title}"[^>]*href="([^"]*)"`, 'i');
+  const match = xml.match(regex);
+  return match ? match[1] : null;
+}
+
 // ---- API 客户端类 ----
 class ApiClient {
   private baseUrl: string;
@@ -1599,20 +1635,139 @@ class ApiClient {
 
   // ---- Search ----
   async searchArxiv(query: string, start = 0, maxResults = 10) {
-    return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number } }>(
-      `/search/arxiv?query=${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`
-    );
+    // Mock 模式下走原有 Mock 逻辑
+    if (IS_MOCK) {
+      return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number } }>(
+        `/search/arxiv?query=${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}`
+      );
+    }
+
+    // 真实模式：前端直连 arXiv API（绕过 EdgeOne Pages Edge Function 网络沙箱限制）
+    if (!query.trim()) {
+      return { success: true, data: { data: [], total: 0, offset: start, limit: maxResults } } as { success: boolean; data: { data: any[]; total: number; offset: number; limit: number } };
+    }
+
+    const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=${start}&max_results=${maxResults}&sortBy=relevance&sortOrder=descending`;
+
+    try {
+      const response = await fetch(arxivUrl, {
+        headers: { 'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)' },
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (!response.ok) {
+        throw new ApiError(ApiErrorCode.SERVER_ERROR, `arXiv API error: ${response.status} ${response.statusText}`);
+      }
+
+      const xmlText = await response.text();
+
+      // 解析 arXiv Atom XML
+      const papers: any[] = [];
+      const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+      let match: RegExpExecArray | null;
+      while ((match = entryRegex.exec(xmlText)) !== null) {
+        const entry = match[1];
+        papers.push({
+          id: extractXmlTag(entry, 'id')?.replace('http://arxiv.org/abs/', '') || '',
+          title: extractXmlTag(entry, 'title')?.replace(/\s+/g, ' ').trim() || 'Untitled',
+          authors: extractXmlAuthors(entry),
+          year: extractXmlYear(entry),
+          summary: extractXmlTag(entry, 'summary')?.replace(/\s+/g, ' ').trim() || '',
+          venue: 'arXiv',
+          pdfUrl: extractXmlLink(entry, 'pdf') || '',
+          abstractUrl: extractXmlLink(entry, 'alternate') || '',
+          published: extractXmlTag(entry, 'published') || '',
+          updated: extractXmlTag(entry, 'updated') || '',
+        });
+      }
+
+      const totalMatch = xmlText.match(/<opensearch:totalResults[^>]*>(\d+)<\/opensearch:totalResults>/);
+      const total = totalMatch ? parseInt(totalMatch[1], 10) : papers.length;
+
+      return {
+        success: true,
+        data: {
+          data: papers,
+          total,
+          offset: start,
+          limit: maxResults,
+        },
+      };
+    } catch (error) {
+      console.error('[searchArxiv] Direct fetch error:', error);
+      throw handleApiError(error);
+    }
   }
 
   async searchSemanticScholar(query: string, offset = 0, limit = 10, apiKey?: string) {
-    const qs = new URLSearchParams();
-    qs.set('query', query);
-    qs.set('offset', String(offset));
-    qs.set('limit', String(limit));
-    if (apiKey) qs.set('apiKey', apiKey);
-    return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number; next: number | null } }>(
-      `/search/semantic-scholar?${qs.toString()}`
-    );
+    // Mock 模式下走原有 Mock 逻辑
+    if (IS_MOCK) {
+      const qs = new URLSearchParams();
+      qs.set('query', query);
+      qs.set('offset', String(offset));
+      qs.set('limit', String(limit));
+      if (apiKey) qs.set('apiKey', apiKey);
+      return this.request<{ success: boolean; data: { data: any[]; total: number; offset: number; limit: number; next: number | null } }>(
+        `/search/semantic-scholar?${qs.toString()}`
+      );
+    }
+
+    // 真实模式：前端直连 Semantic Scholar API（绕过 EdgeOne Pages Edge Function 网络沙箱限制）
+    if (!query.trim()) {
+      return { success: true, data: { data: [], total: 0, offset, limit, next: null } } as { success: boolean; data: { data: any[]; total: number; offset: number; limit: number; next: number | null } };
+    }
+
+    const fields = 'title,authors,year,venue,publicationVenue,abstract,externalIds,citationCount,url,openAccessPdf';
+    const ssUrl = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}&fields=${fields}`;
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'JoanAcademicHub/1.0 (mailto:academic@hub.local)',
+    };
+    if (apiKey) {
+      headers['x-api-key'] = apiKey;
+    }
+
+    try {
+      const response = await fetch(ssUrl, {
+        headers,
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (!response.ok) {
+        throw new ApiError(ApiErrorCode.SERVER_ERROR, `Semantic Scholar API error: ${response.status} ${response.statusText}`);
+      }
+
+      const json = await response.json();
+      const papers = (json.data || []).map((p: any) => ({
+        id: p.paperId || p.externalIds?.DOI || p.externalIds?.ArXiv || '',
+        title: p.title || 'Untitled',
+        authors: (p.authors || []).map((a: any) => a.name || ''),
+        year: p.year || null,
+        venue: (p.publicationVenue && p.publicationVenue.name) ? p.publicationVenue.name : (p.venue || ''),
+        abstract: p.abstract || '',
+        citations: p.citationCount || 0,
+        url: p.url || '',
+        doi: p.externalIds?.DOI || '',
+        pdfUrl: p.openAccessPdf?.url || '',
+        source: 'Semantic Scholar',
+      }));
+
+      const nextOffset = json.next ? offset + limit : null;
+
+      return {
+        success: true,
+        data: {
+          data: papers,
+          total: json.total || 0,
+          offset,
+          limit,
+          next: nextOffset,
+        },
+      };
+    } catch (error) {
+      console.error('[searchSemanticScholar] Direct fetch error:', error);
+      throw handleApiError(error);
+    }
   }
 
   async importFromSearch(paper: any) {
