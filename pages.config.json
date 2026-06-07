@@ -13,6 +13,14 @@
       "target": "./dist"
     }
   ],
+  "edgeFunctions": {
+    "routes": [
+      {
+        "src": "^/api/(.*)$",
+        "dest": "/api/[[default]].js"
+      }
+    ]
+  },
   "headers": [
     {
       "source": "/assets/js/*.js",
