@@ -7,7 +7,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, Grid3X3, List, Star, ExternalLink,
   ChevronDown, BookOpen, Tag, X, SlidersHorizontal, RefreshCw,
-  Upload, Pencil, Trash2, Eye,
+  Upload, Pencil, Trash2, Eye, CheckSquare, Square, FileDown,
+  FolderOpen, XCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -104,6 +105,10 @@ export default function LibraryPage() {
   // PDF Preview
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewPaper, setPreviewPaper] = useState<Paper | null>(null);
+
+  // 批量管理状态
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // 防抖搜索（300ms）
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -225,6 +230,71 @@ export default function LibraryPage() {
     updateInPapers(updated);
   }, [updateInPapers]);
 
+  // ---- 批量管理操作 ----
+  const toggleBatchMode = useCallback(() => {
+    setBatchMode((prev) => {
+      if (prev) setSelectedIds(new Set()); // 退出时清空选择
+      return !prev;
+    });
+  }, []);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((p) => p.id)));
+  }, [filtered]);
+
+  const deselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedIds.size} 篇文献吗？此操作不可撤销。`)) return;
+
+    const idsToDelete = Array.from(selectedIds);
+    const backups = papers.filter((p) => selectedIds.has(p.id));
+
+    // 乐观删除
+    idsToDelete.forEach((id) => removeFromPapers(id));
+    setSelectedIds(new Set());
+
+    try {
+      await Promise.all(idsToDelete.map((id) => api.deletePaper(id)));
+      toast.success(`已删除 ${idsToDelete.length} 篇文献`);
+    } catch {
+      // 回滚
+      backups.forEach((p) => addToPapers(p));
+      toast.error('批量删除失败，已恢复');
+    }
+  }, [selectedIds, papers, removeFromPapers, addToPapers]);
+
+  const handleBatchExport = useCallback(async (format: 'bibtex' | 'csv') => {
+    if (selectedIds.size === 0) return;
+    try {
+      const response = await api.exportPapers(format, Array.from(selectedIds));
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `papers_${format}_${new Date().toISOString().slice(0, 10)}.${format === 'bibtex' ? 'bib' : 'csv'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success(`已导出 ${selectedIds.size} 篇文献 (${format.toUpperCase()})`);
+    } catch {
+      toast.error('导出失败');
+    }
+  }, [selectedIds]);
+
   // All unique tags from loaded papers
   const allTags = useMemo(
     () => Array.from(new Set(papers.flatMap((p) => p.tags))).sort(),
@@ -336,6 +406,15 @@ export default function LibraryPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant={batchMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={toggleBatchMode}
+              className="gap-2"
+            >
+              <CheckSquare className="h-4 w-4" />
+              {batchMode ? '退出批量' : '批量管理'}
+            </Button>
             <ImportMaterialsButton
               onClick={() => setImportDialogOpen(true)}
               count={materials.length}
@@ -483,6 +562,82 @@ export default function LibraryPage() {
           )}
         </AnimatePresence>
 
+        {/* Batch Operations Toolbar */}
+        <AnimatePresence>
+          {batchMode && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <Card className="bg-primary/5 border-primary/20">
+                <CardContent className="pt-4 pb-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      已选择 {selectedIds.size} / {filtered.length} 篇
+                    </span>
+                  </div>
+                  <div className="flex-1" />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={selectAllFiltered}
+                      disabled={selectedIds.size === filtered.length}
+                      className="gap-1.5"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5" />
+                      全选
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={deselectAll}
+                      disabled={selectedIds.size === 0}
+                      className="gap-1.5"
+                    >
+                      <Square className="h-3.5 w-3.5" />
+                      取消
+                    </Button>
+                    <div className="w-px h-6 bg-border mx-1" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBatchExport('bibtex')}
+                      disabled={selectedIds.size === 0}
+                      className="gap-1.5"
+                    >
+                      <FileDown className="h-3.5 w-3.5" />
+                      BibTeX
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBatchExport('csv')}
+                      disabled={selectedIds.size === 0}
+                      className="gap-1.5"
+                    >
+                      <FileDown className="h-3.5 w-3.5" />
+                      CSV
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleBatchDelete}
+                      disabled={selectedIds.size === 0}
+                      className="gap-1.5"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      删除
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Import Dialog */}
         <ImportFromMaterialsDialog
           open={importDialogOpen}
@@ -539,13 +694,16 @@ export default function LibraryPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.04 }}
               >
-                <Link to={`/dashboard/paper/${paper.id}`}>
+                <Link to={batchMode ? '#' : `/dashboard/paper/${paper.id}`} onClick={(e) => { if (batchMode) { e.preventDefault(); toggleSelect(paper.id); } }}>
                   <PaperCard
                     paper={paper}
                     onToggleFavorite={handleToggleFavorite}
                     onEdit={handleEditPaper}
                     onDelete={handleDeletePaper}
                     onPreview={(p) => { setPreviewPaper(p); setPreviewOpen(true); }}
+                    batchMode={batchMode}
+                    selected={selectedIds.has(paper.id)}
+                    onSelect={toggleSelect}
                   />
                 </Link>
               </motion.div>
@@ -560,13 +718,16 @@ export default function LibraryPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.03 }}
               >
-                <Link to={`/dashboard/paper/${paper.id}`}>
+                <Link to={batchMode ? '#' : `/dashboard/paper/${paper.id}`} onClick={(e) => { if (batchMode) { e.preventDefault(); toggleSelect(paper.id); } }}>
                   <PaperListItem
                     paper={paper}
                     onToggleFavorite={handleToggleFavorite}
                     onEdit={handleEditPaper}
                     onDelete={handleDeletePaper}
                     onPreview={(p) => { setPreviewPaper(p); setPreviewOpen(true); }}
+                    batchMode={batchMode}
+                    selected={selectedIds.has(paper.id)}
+                    onSelect={toggleSelect}
                   />
                 </Link>
               </motion.div>
@@ -579,21 +740,34 @@ export default function LibraryPage() {
 }
 
 // ---------- Grid Card ----------
-function PaperCard({ paper, onToggleFavorite, onEdit, onDelete, onPreview }: {
+function PaperCard({ paper, onToggleFavorite, onEdit, onDelete, onPreview, batchMode, selected, onSelect }: {
   paper: Paper; onToggleFavorite: (id: string, current: boolean) => void;
   onEdit: (paper: Paper) => void; onDelete: (id: string) => void; onPreview?: (paper: Paper) => void;
+  batchMode?: boolean; selected?: boolean; onSelect?: (id: string) => void;
 }) {
   return (
     <Card className="group h-full transition-all hover:shadow-card-hover cursor-pointer">
       <CardContent className="pt-5 pb-4 flex flex-col h-full">
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1 mb-3">
+        {/* Tags + Batch Checkbox */}
+        <div className="flex flex-wrap gap-1 mb-3 items-center">
+          {batchMode && onSelect && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(paper.id); }}
+              className="mr-1 shrink-0"
+            >
+              {selected ? (
+                <CheckSquare className="h-4 w-4 text-primary" />
+              ) : (
+                <Square className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+          )}
           {paper.tags.slice(0, 3).map((t) => (
             <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">
               {t}
             </Badge>
           ))}
-          <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className={cn("ml-auto flex items-center gap-1.5 transition-opacity", batchMode ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
             {(paper.pdfUrl || paper.url) && onPreview && (
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPreview(paper); }}
@@ -659,21 +833,35 @@ function PaperCard({ paper, onToggleFavorite, onEdit, onDelete, onPreview }: {
 }
 
 // ---------- List Item ----------
-function PaperListItem({ paper, onToggleFavorite, onEdit, onDelete, onPreview }: {
+function PaperListItem({ paper, onToggleFavorite, onEdit, onDelete, onPreview, batchMode, selected, onSelect }: {
   paper: Paper; onToggleFavorite: (id: string, current: boolean) => void;
   onEdit: (paper: Paper) => void; onDelete: (id: string) => void; onPreview?: (paper: Paper) => void;
+  batchMode?: boolean; selected?: boolean; onSelect?: (id: string) => void;
 }) {
   return (
-    <div className="group flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-card hover:border-primary/30">
-      <div className="mt-0.5 hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <BookOpen className="h-5 w-5" />
-      </div>
+    <div className={cn("group flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-card hover:border-primary/30", selected && "bg-primary/5 border-primary/30")}>
+      {batchMode && onSelect ? (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(paper.id); }}
+          className="mt-0.5 shrink-0"
+        >
+          {selected ? (
+            <CheckSquare className="h-5 w-5 text-primary" />
+          ) : (
+            <Square className="h-5 w-5 text-muted-foreground" />
+          )}
+        </button>
+      ) : (
+        <div className="mt-0.5 hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <BookOpen className="h-5 w-5" />
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <h3 className="line-clamp-1 text-sm font-semibold group-hover:text-primary transition-colors flex-1">
             {paper.title}
           </h3>
-          <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className={cn("flex items-center gap-1.5 shrink-0 transition-opacity", batchMode ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
             {(paper.pdfUrl || paper.url) && onPreview && (
               <button
                 onClick={(e) => { e.preventDefault(); onPreview(paper); }}
