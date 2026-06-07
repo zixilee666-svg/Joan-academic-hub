@@ -16,7 +16,14 @@ const IS_MOCK: boolean = import.meta.env.VITE_MOCK_MODE !== 'false';
 
 export async function getToken(): Promise<string | null> {
   try {
-    return JSON.parse(localStorage.getItem('joan_auth_token') || 'null');
+    const raw = localStorage.getItem('joan_auth_token');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Zustand persist 格式: { state: { token: "...", user: {...} }, version: 0 }
+    // 兼容旧格式（直接存 token 字符串）
+    if (parsed?.state?.token) return parsed.state.token as string;
+    if (typeof parsed === 'string') return parsed;
+    return null;
   } catch {
     return null;
   }

@@ -51,16 +51,38 @@ export const spaceService = {
     return apiClient.get<{ spaces: SpaceConfig[]; total: number }>(`/spaces?${query}`);
   },
 
-  getProfile: (username: string) => apiClient.get<SpaceConfig>(`/spaces/${username}`),
+  getProfile: async (username: string) => {
+    if (IS_MOCK) {
+      return libApi.getSpaceProfile(username);
+    }
+    return apiClient.get<SpaceConfig>(`/spaces/${username}`);
+  },
 
-  getMaterials: (username: string) =>
-    apiClient.get<{ success: boolean; data: Material[] }>(`/spaces/${username}/materials`),
+  getMaterials: async (username: string) => {
+    if (IS_MOCK) {
+      return libApi.getSpaceMaterials(username);
+    }
+    return apiClient.get<{ success: boolean; data: Material[] }>(`/spaces/${username}/materials`);
+  },
 
-  getTheme: (username: string) => apiClient.get<any>(`/spaces/${username}/theme`),
+  getTheme: async (username: string) => {
+    if (IS_MOCK) {
+      return { success: true as const, data: {} };
+    }
+    return apiClient.get<any>(`/spaces/${username}/theme`);
+  },
 
-  updateConfig: (config: Partial<SpaceConfig>) =>
-    apiClient.put<SpaceConfig>('/spaces/me', config),
+  updateConfig: async (config: Partial<SpaceConfig>) => {
+    if (IS_MOCK) {
+      return libApi.updateSpaceConfig(config as Record<string, unknown>);
+    }
+    return apiClient.put<SpaceConfig>('/spaces/me', config);
+  },
 
-  recordView: (username: string) =>
-    apiClient.post<null>(`/spaces/${username}/view`),
+  recordView: async (username: string) => {
+    if (IS_MOCK) {
+      return libApi.recordSpaceView(username);
+    }
+    return apiClient.post<null>(`/spaces/${username}/view`);
+  },
 };

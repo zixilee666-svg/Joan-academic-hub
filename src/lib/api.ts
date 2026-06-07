@@ -986,8 +986,31 @@ function handleMockRequest(path: string, method: string, body?: any): any {
     return { success: true };
   }
 
+  // Spaces — profile GET: /spaces/:username
+  if (path.match(/^\/spaces\/[^/?]+$/) && method === 'GET') {
+    const username = path.split('/')[2];
+    const space = mockSpaces.find(s => s.username === username);
+    if (!space) return { success: false, error: 'Space not found' };
+    return { success: true, data: { ...space, isPublic: true } };
+  }
+
+  // Spaces — materials GET: /spaces/:username/materials
+  if (path.match(/^\/spaces\/[^/]+\/materials$/) && method === 'GET') {
+    return { success: true, data: [] };
+  }
+
+  // Spaces — record view POST: /spaces/:username/view
+  if (path.match(/^\/spaces\/[^/]+\/view$/) && method === 'POST') {
+    return { success: true, data: null };
+  }
+
+  // Spaces — update me PUT: /spaces/me
+  if (path === '/spaces/me' && method === 'PUT') {
+    return { success: true, data: body };
+  }
+
   // Spaces — list GET
-  if (path.startsWith('/spaces') && !path.includes('/') && method === 'GET') {
+  if (path.startsWith('/spaces') && !path.match(/\/spaces\/[^?]/) && method === 'GET') {
     const paramStr = path.includes('?') ? path.split('?')[1] : '';
     const params = new URLSearchParams(paramStr);
     let results = [...mockSpaces];
@@ -2181,6 +2204,26 @@ class ApiClient {
     if (params?.page) query.set('page', String(params.page));
     if (params?.limit) query.set('limit', String(params.limit));
     return this.request<{ success: boolean; data: { spaces: any[]; total: number } }>(`/spaces?${query}`);
+  }
+
+  /** 获取单个学术空间详情 */
+  async getSpaceProfile(username: string) {
+    return this.request<{ success: boolean; data: any }>(`/spaces/${username}`);
+  }
+
+  /** 获取空间素材列表 */
+  async getSpaceMaterials(username: string) {
+    return this.request<{ success: boolean; data: any[] }>(`/spaces/${username}/materials`);
+  }
+
+  /** 更新当前用户的空间配置 */
+  async updateSpaceConfig(config: Record<string, unknown>) {
+    return this.request<{ success: boolean; data: any }>('/spaces/me', { method: 'PUT', body: config });
+  }
+
+  /** 记录空间访问 */
+  async recordSpaceView(username: string) {
+    return this.request<{ success: boolean; data: null }>(`/spaces/${username}/view`, { method: 'POST' });
   }
 }
 
