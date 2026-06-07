@@ -3044,6 +3044,16 @@ export async function onRequest(context) {
     return handleImportZotero(request, JWT_SECRET);
   }
 
+  // 从搜索导入 — POST /api/search/import
+  if (segments[0] === 'search' && segments[1] === 'import' && request.method === 'POST') {
+    return handleImportFromSearch(request, JWT_SECRET);
+  }
+
+  // 从搜索导入（直接路径兼容） — POST /api/import
+  if (segments[0] === 'import' && !segments[1] && request.method === 'POST') {
+    return handleImportFromSearch(request, JWT_SECRET);
+  }
+
   // ========================================
   // 管理后台路由
   // ========================================
