@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import type { User } from '@/types';
-import { api } from '@/lib/api';
+import { api, addErrorInterceptor, ApiErrorCode } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/userStore';
 
@@ -68,20 +68,73 @@ function parseStoredToken(raw: string | null): string | null {
   }
 }
 
+/** 解码 JWT payload 并检查是否过期 */
+function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return true; // 非法 JWT 格式
+    // base64url → base64
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const payload = JSON.parse(atob(padded));
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return true;
+    return false;
+  } catch {
+    return true; // 解析失败视为过期
+  }
+}
+
+/** 验证 token 是否为有效 JWT 且未过期 */
+function isValidToken(token: string | null): boolean {
+  if (!token) return false;
+  if (!token.startsWith('eyJ')) return false; // JWT 必须以 eyJ 开头
+  return !isTokenExpired(token);
+}
+
 // 初始化：从 localStorage 恢复会话
 function getInitialState(): AuthState {
   const rawToken = localStorage.getItem('joan_auth_token');
   const rawUser = localStorage.getItem('joan_academic_user');
   const token = parseStoredToken(rawToken);
   const user = rawUser ? parseStoredUser(rawUser) : null;
-  if (token && user) {
+  if (token && user && isValidToken(token)) {
     return { isAuthenticated: true, isLoading: false, user, token };
+  }
+  // Token 无效或过期：清理残留数据
+  if (!isValidToken(token)) {
+    localStorage.removeItem('joan_auth_token');
+    localStorage.removeItem('joan_academic_user');
   }
   return { isAuthenticated: false, isLoading: false, user: null, token: null };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, undefined, getInitialState);
+  const hasHandled401 = useRef(false);
+
+  // 全局 401 拦截器：收到鉴权失败时自动登出并重定向到登录页
+  useEffect(() => {
+    const removeInterceptor = addErrorInterceptor((error) => {
+      if (error.code === ApiErrorCode.UNAUTHORIZED && !hasHandled401.current) {
+        hasHandled401.current = true;
+        console.warn('[Auth] 检测到 401 Unauthorized，自动登出并跳转登录页');
+        // 清理所有 auth 相关存储
+        localStorage.removeItem('joan_auth_token');
+        localStorage.removeItem('joan_academic_user');
+        sessionStorage.setItem('joan_just_logged_out', 'true');
+        // 同步清理 Zustand
+        useAuthStore.getState().logout();
+        dispatch({ type: 'LOGOUT' });
+        // 延迟跳转，避免在渲染周期中直接操作 location
+        setTimeout(() => {
+          window.location.hash = '#/login';
+          hasHandled401.current = false;
+        }, 100);
+      }
+      return error;
+    });
+    return () => { removeInterceptor(); };
+  }, []);
 
   // Sync with Zustand store changes (e.g. logout from other components)
   const zustandUser = useAuthStore(s => s.user);

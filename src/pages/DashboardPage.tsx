@@ -533,15 +533,22 @@ export default function DashboardPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const statsRes = await api.getReadingStats();
-      if (statsRes.success && statsRes.data) {
-        setStats(statsRes.data);
+      // 阅读统计：独立容错，失败不阻塞其余数据加载
+      try {
+        const statsRes = await api.getReadingStats();
+        if (statsRes.success && statsRes.data) {
+          setStats(statsRes.data);
+        }
+      } catch (statsErr: any) {
+        console.warn('[Dashboard] 阅读统计加载失败:', statsErr.message || statsErr);
+        // 统计失败非致命，静默降级
       }
       setStatsLoaded(true);
+
       // ensurePapers/ensureProjects 如果已缓存则立即返回
       await Promise.all([ensurePapers(), ensureProjects()]);
     } catch (err) {
-      console.error('[Dashboard] Failed to load data:', err);
+      console.error('[Dashboard] 数据加载失败:', err);
       toast.error('加载数据失败，请刷新重试');
     } finally {
       setRefreshing(false);
