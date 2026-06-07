@@ -25,5 +25,5 @@ export const searchService = {
     return apiClient.get<SearchResult[]>(`/search/crossref?${params}`);
   },
 
-  importPaper: (paper: Partial<Paper>) => apiClient.post<Paper>('/search/import', paper),
+  importPaper: (paper: Partial<Paper>) => apiClient.post<Paper>('/import', paper),
 };

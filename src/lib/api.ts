@@ -1151,7 +1151,7 @@ function handleMockRequest(path: string, method: string, body?: any): any {
     const nextOffset = offset + limit < 45 ? offset + limit : null;
     return { success: true, data: { data, total: 45, offset, limit, next: nextOffset } };
   }
-  if (path === '/search/import' && method === 'POST') {
+  if (path === '/import' && method === 'POST') {
     return { success: true, data: body };
   }
 
@@ -1906,7 +1906,7 @@ class ApiClient {
 
   async importFromSearch(paper: any) {
     return this.request<{ success: boolean; data: Paper }>(
-      '/search/import',
+      '/import',
       { method: 'POST', body: JSON.stringify(paper) }
     );
   }
