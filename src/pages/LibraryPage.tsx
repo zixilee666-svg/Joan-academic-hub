@@ -247,10 +247,6 @@ export default function LibraryPage() {
     });
   }, []);
 
-  const selectAllFiltered = useCallback(() => {
-    setSelectedIds(new Set(filtered.map((p) => p.id)));
-  }, [filtered]);
-
   const deselectAll = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
@@ -346,6 +342,11 @@ export default function LibraryPage() {
 
     return result;
   }, [papers, debouncedSearch, selectedTag, onlyFavorites, sortKey, sortDir]);
+
+  // 批量全选（依赖 filtered，必须在此定义之后）
+  const selectAllFiltered = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((p) => p.id)));
+  }, [filtered]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
