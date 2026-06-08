@@ -533,20 +533,24 @@ export default function DashboardPage() {
 
   const loadData = useCallback(async () => {
     try {
-      // 阅读统计：独立容错，失败不阻塞其余数据加载
-      try {
-        const statsRes = await api.getReadingStats();
-        if (statsRes.success && statsRes.data) {
-          setStats(statsRes.data);
-        }
-      } catch (statsErr: any) {
-        console.warn('[Dashboard] 阅读统计加载失败:', statsErr.message || statsErr);
-        // 统计失败非致命，静默降级
-      }
-      setStatsLoaded(true);
-
-      // ensurePapers/ensureProjects 如果已缓存则立即返回
-      await Promise.all([ensurePapers(), ensureProjects()]);
+      // 并行发起所有请求，谁先到谁先渲染
+      await Promise.all([
+        // 阅读统计：独立容错，失败降级为 0
+        (async () => {
+          try {
+            const statsRes = await api.getReadingStats();
+            if (statsRes.success && statsRes.data) {
+              setStats(statsRes.data);
+            }
+          } catch (statsErr: any) {
+            console.warn('[Dashboard] 阅读统计加载失败:', statsErr.message || statsErr);
+          } finally {
+            setStatsLoaded(true);
+          }
+        })(),
+        ensurePapers(),
+        ensureProjects(),
+      ]);
     } catch (err) {
       console.error('[Dashboard] 数据加载失败:', err);
       toast.error('加载数据失败，请刷新重试');
@@ -577,7 +581,7 @@ export default function DashboardPage() {
   const favorites = papers.filter((p) => p.isFavorited);
   const allTags = Array.from(new Set(papers.flatMap((p) => p.tags)));
 
-  const loading = !statsLoaded || !papersLoaded || !projectsLoaded;
+  const loading = !papersLoaded || !projectsLoaded;
 
   if (loading) {
     return (
@@ -627,8 +631,8 @@ export default function DashboardPage() {
           <JoanQuote className="hidden sm:block max-w-xs" />
         </div>
 
-        {/* 统计卡片 */}
-        {stats && (
+        {/* 统计卡片 — stats 未加载时显示骨架屏 */}
+        {stats ? (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard
               icon={BookOpen} label="文献总量" value={stats.totalPapers}
@@ -658,6 +662,18 @@ export default function DashboardPage() {
               sub="分" color="bg-accent"
               animationDelay={0.2}
             />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="rounded-xl border bg-card p-4 flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-5 w-8" />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

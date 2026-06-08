@@ -1100,10 +1100,19 @@ async function handleGetPapers(request, username) {
   if (!userId) return notFound('User not found', request);
 
   const paperIds = await kvGetJson('users:' + userId + ':papers') || [];
-  const papers = [];
 
-  for (const paperId of paperIds) {
-    const paper = await kvGetJson('papers:' + paperId);
+  // 并行读取所有论文（之前是顺序 for...of，159 条耗时 10.6s）
+  const results = await Promise.all(paperIds.map(async (paperId) => {
+    try {
+      return await kvGetJson('papers:' + paperId);
+    } catch (e) {
+      console.error('[handleGetPapers] Failed to read paper:', paperId, e);
+      return null;
+    }
+  }));
+
+  const papers = [];
+  for (const paper of results) {
     if (paper) {
       papers.push({
         ...paper,
@@ -2373,9 +2382,13 @@ export async function onRequest(context) {
       const url = new URL(request.url);
       const format = url.searchParams.get('format') || 'json';
       const paperIds = await kvGetJson('users:' + payload.userId + ':papers') || [];
+      // 并行读取所有论文
+      const results = await Promise.all(paperIds.map(async (pid) => {
+        try { return await kvGetJson('papers:' + pid); }
+        catch (e) { return null; }
+      }));
       const allPapers = [];
-      for (const pid of paperIds) {
-        const p = await kvGetJson('papers:' + pid);
+      for (const p of results) {
         if (p) allPapers.push(p);
       }
       if (format === 'bibtex') {
@@ -2549,9 +2562,14 @@ export async function onRequest(context) {
       const payload = await requireAuth(request, JWT_SECRET);
       if (payload instanceof Response) return payload;
       const paperIds = await kvGetJson('users:' + payload.userId + ':papers') || [];
+
+      // 并行读取所有论文（之前是顺序 for...of）
+      const results = await Promise.all(paperIds.map(async (pid) => {
+        try { return await kvGetJson('papers:' + pid); }
+        catch (e) { console.error('[stats] Failed to read paper:', pid, e); return null; }
+      }));
       const papers = [];
-      for (const pid of paperIds) {
-        const p = await kvGetJson('papers:' + pid);
+      for (const p of results) {
         if (p) papers.push(p);
       }
       const readPapers = papers.filter(p => p.isRead).length;
