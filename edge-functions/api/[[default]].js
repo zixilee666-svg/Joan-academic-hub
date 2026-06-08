@@ -925,13 +925,14 @@ async function handleUpdateUser(request, JWT_SECRET, userId) {
 
   try {
     const body = await request.json();
-    const { displayName, email, institution, bio, avatar, role, isActive } = body;
+    const { displayName, email, institution, bio, avatar, researchField, role, isActive } = body;
 
     if (displayName !== undefined) user.displayName = displayName;
     if (email !== undefined && (payload.role === 'admin' || payload.userId === userId)) user.email = email;
     if (institution !== undefined) user.institution = institution;
     if (bio !== undefined) user.bio = bio;
     if (avatar !== undefined) user.avatar = avatar;
+    if (researchField !== undefined) user.researchField = researchField;
 
     // Admin-only fields
     if (payload.role === 'admin') {

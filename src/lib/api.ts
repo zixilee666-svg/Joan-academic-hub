@@ -2098,7 +2098,7 @@ class ApiClient {
     );
   }
 
-  async updateUser(userId: string, data: Partial<{ role: string; isActive: boolean; displayName: string; email: string; institution: string; bio: string }>) {
+  async updateUser(userId: string, data: Partial<{ role: string; isActive: boolean; displayName: string; email: string; institution: string; bio: string; avatar: string; researchField: string }>) {
     return this.request<ApiResponse<User>>(`/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify(data),

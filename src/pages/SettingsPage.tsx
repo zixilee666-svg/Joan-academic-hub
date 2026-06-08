@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import type { ThemeMode, CitationFormat, UserSettings, AIModelConfig } from '@/types';
 
 function SettingsContent() {
-  const user = useAuthStore((s) => s.user);
+  const { user, updateUser } = useAuthStore();
   const { mode, setMode } = useThemeStore();
   const settings = useSettingsStore();
 
@@ -113,6 +113,16 @@ function SettingsContent() {
   const saveProfile = async () => {
     setSavingProfile(true);
     try {
+      // 1. 保存个人资料字段到用户表
+      if (user?.id) {
+        await api.updateUser(user.id, {
+          displayName: displayName || user.username,
+          institution: institution || '',
+          researchField: researchField || '',
+        });
+      }
+
+      // 2. 保存设置到 settings 表
       await api.updateSettings({
         theme: mode,
         citationFormat: settings.citationFormat,
@@ -130,6 +140,14 @@ function SettingsContent() {
         aiModels: settings.aiModels,
         defaultAiModelId: settings.defaultAiModelId,
       } as any);
+
+      // 3. 更新本地 Zustand 状态（页面即时反映，避免刷新丢失）
+      updateUser({
+        displayName: displayName || user?.username,
+        institution: institution || '',
+        researchField: researchField || '',
+      });
+
       toast.success('个人资料已保存（含外部工具配置）');
     } catch {
       toast.error('保存失败，请重试');
