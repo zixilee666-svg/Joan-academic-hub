@@ -32,6 +32,7 @@ function SettingsContent() {
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [institution, setInstitution] = useState(user?.institution || '');
   const [researchField, setResearchField] = useState(user?.researchField || '');
+  const [bio, setBio] = useState(user?.bio || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -119,6 +120,7 @@ function SettingsContent() {
           displayName: displayName || user.username,
           institution: institution || '',
           researchField: researchField || '',
+          bio: bio || '',
         });
       }
 
@@ -146,6 +148,7 @@ function SettingsContent() {
         displayName: displayName || user?.username,
         institution: institution || '',
         researchField: researchField || '',
+        bio: bio || '',
       });
 
       toast.success('个人资料已保存（含外部工具配置）');
@@ -306,6 +309,15 @@ function SettingsContent() {
                       onChange={(e) => setResearchField(e.target.value)}
                       placeholder="如：图神经网络"
                       className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label>个人简介</Label>
+                    <textarea
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      placeholder="介绍一下你的研究方向和兴趣..."
+                      className="mt-1.5 w-full min-h-[80px] px-3 py-2 rounded-md border border-input bg-background text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
                     />
                   </div>
                 </div>

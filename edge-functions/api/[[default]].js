@@ -1048,26 +1048,19 @@ async function handleGetSpace(request, username) {
   const space = await kvGetJson('spaces:' + username);
   if (!space) return notFound('Space not found', request);
 
-  // 兜底：如果 spaces KV 中缺少个人资料字段，从 users KV 回退读取
-  let displayName = space.displayName;
-  let institution = space.institution;
-  let researchField = space.researchField || '';
-  let bio = space.bio;
-  let avatar = space.avatar || '';
-
-  if (!institution || !researchField || !displayName) {
-    const userId = await kvGet('users:by-username:' + username);
-    if (userId) {
-      const user = await kvGetJson('users:' + userId);
-      if (user) {
-        if (!displayName) displayName = user.displayName;
-        if (!institution) institution = user.institution;
-        if (!researchField) researchField = user.researchField || '';
-        if (!bio) bio = user.bio;
-        if (!avatar) avatar = user.avatar || '';
-      }
-    }
+  // 个人资料字段以 users KV 为准（设置页面写入的源头），spaces KV 作为兜底
+  const userId = await kvGet('users:by-username:' + username);
+  let user = null;
+  if (userId) {
+    try { user = await kvGetJson('users:' + userId); } catch (e) { /* ignore */ }
   }
+
+  // users KV 优先，spaces KV 兜底
+  const displayName = (user?.displayName) || space.displayName;
+  const institution = (user?.institution) || space.institution;
+  const researchField = (user?.researchField) || space.researchField || '';
+  const bio = (user?.bio) || space.bio;
+  const avatar = (user?.avatar) || space.avatar || '';
 
   return success({
     username: space.username,
