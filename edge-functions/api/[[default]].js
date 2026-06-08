@@ -944,6 +944,22 @@ async function handleUpdateUser(request, JWT_SECRET, userId) {
 
     await kvSetJson('users:' + userId, user);
 
+    // 同步个人资料到 spaces KV，确保个人空间展示数据一致
+    const profileFields = ['displayName', 'institution', 'researchField', 'bio', 'avatar'];
+    const hasProfileUpdate = profileFields.some(f => body[f] !== undefined);
+    if (hasProfileUpdate && user.username) {
+      const space = await kvGetJson('spaces:' + user.username);
+      if (space) {
+        if (displayName !== undefined) space.displayName = displayName;
+        if (institution !== undefined) space.institution = institution;
+        if (researchField !== undefined) space.researchField = researchField;
+        if (bio !== undefined) space.bio = bio;
+        if (avatar !== undefined) space.avatar = avatar;
+        space.updatedAt = new Date().toISOString();
+        await kvSetJson('spaces:' + user.username, space);
+      }
+    }
+
     if (body.username && body.username !== user.username) {
       if (await kvHas('users:by-username:' + body.username)) {
         return apiError('Username already exists', 409, 'CONFLICT', request);
@@ -1032,13 +1048,34 @@ async function handleGetSpace(request, username) {
   const space = await kvGetJson('spaces:' + username);
   if (!space) return notFound('Space not found', request);
 
+  // 兜底：如果 spaces KV 中缺少个人资料字段，从 users KV 回退读取
+  let displayName = space.displayName;
+  let institution = space.institution;
+  let researchField = space.researchField || '';
+  let bio = space.bio;
+  let avatar = space.avatar || '';
+
+  if (!institution || !researchField || !displayName) {
+    const userId = await kvGet('users:by-username:' + username);
+    if (userId) {
+      const user = await kvGetJson('users:' + userId);
+      if (user) {
+        if (!displayName) displayName = user.displayName;
+        if (!institution) institution = user.institution;
+        if (!researchField) researchField = user.researchField || '';
+        if (!bio) bio = user.bio;
+        if (!avatar) avatar = user.avatar || '';
+      }
+    }
+  }
+
   return success({
     username: space.username,
-    displayName: space.displayName,
-    bio: space.bio,
-    institution: space.institution,
-    researchField: space.researchField || '',
-    avatar: space.avatar || '',
+    displayName,
+    bio,
+    institution,
+    researchField,
+    avatar,
     paperCount: space.stats?.papers || 0,
     projectCount: space.stats?.projects || 0,
     viewCount: space.viewCount || 0,
@@ -1090,6 +1127,27 @@ async function handleUpdateSpace(request, JWT_SECRET, username) {
   } catch (e) {
     return apiError('Invalid request', 400, 'BAD_REQUEST', request);
   }
+}
+
+// 记录空间访问
+async function handleRecordSpaceView(request, username) {
+  const space = await kvGetJson('spaces:' + username);
+  if (!space) return notFound('Space not found', request);
+
+  space.viewCount = (space.viewCount || 0) + 1;
+  if (space.viewCount % 10 === 1) space.popularity = Math.min(100, (space.popularity || 0) + 1);
+  space.lastActiveAt = new Date().toISOString();
+
+  await kvSetJson('spaces:' + username, space);
+  return success({ viewCount: space.viewCount }, 'View recorded', request);
+}
+
+// 获取空间主题
+async function handleGetSpaceTheme(request, username) {
+  const space = await kvGetJson('spaces:' + username);
+  if (!space) return notFound('Space not found', request);
+
+  return success({ theme: space.theme || {} }, 'OK', request);
 }
 
 // ============================================================
@@ -2345,6 +2403,12 @@ export async function onRequest(context) {
     }
     if (segments.length === 3 && segments[2] === 'materials' && request.method === 'GET') {
       return handleGetPublicMaterials(request, segments[1]);
+    }
+    if (segments.length === 3 && segments[2] === 'view' && request.method === 'POST') {
+      return handleRecordSpaceView(request, segments[1]);
+    }
+    if (segments.length === 3 && segments[2] === 'theme' && request.method === 'GET') {
+      return handleGetSpaceTheme(request, segments[1]);
     }
   }
 
